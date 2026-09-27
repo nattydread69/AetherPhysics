@@ -15,10 +15,14 @@ through the lattice show how the density field bends paths. The model is based o
 
 The density can be shown two ways (toggle with `V`):
 
-- **Particles** (default): the orbiting lattice of blue particles. The lattice
+- **Fog** (default): volumetric fog whose thickness follows the density above
+  the background level, so it is densest at the centre and fades out with
+  distance. It is coloured by orbital speed with the same colours as the
+  particles.
+- **Particles**: the orbiting particle lattice, coloured by how fast each
+  particle goes round the vertical axis: blue for the slowest (outer corners),
+  through cyan, to orange for the fastest (next to the axis). The lattice
   size depends on the detected GPU (see [GPU scaling](#gpu-scaling)).
-- **Fog**: volumetric fog whose thickness follows the density above the
-  background level, so it is densest at the centre and fades out with distance.
 
 ### Wave Physics (`F2`)
 
@@ -94,7 +98,7 @@ startup.
 - A C++20 compiler (GCC 11+, Clang 14+, or MSVC 2022)
 - CMake 3.16 or newer
 - A GPU and driver that support Vulkan
-- Light Vulkan Graphics, installed so that
+- Light Vulkan Graphics 2.1.1 or later, installed so that
   `find_package(LightVulkanGraphics CONFIG)` can find it
 - [GLFW 3](https://www.glfw.org/)
 - [GLM](https://github.com/g-truc/glm)

@@ -70,8 +70,14 @@ private:
 	int Nx = 25;                       // Lattice resolution (Nx^3 particles), set from the GPU tier
 	float halfRange = 3.0f;            // Lattice spans [-halfRange, halfRange] on each axis
 
-	DisplayMode displayMode = DisplayMode::PARTICLES;
-	const glm::vec4 particleColor{0.1f, 0.3f, 0.8f, 0.7f}; // Blue, slightly transparent
+	DisplayMode displayMode = DisplayMode::FOG;
+	// Particles are coloured by angular speed: slowColor at the lattice corners
+	// (baseAngularSpeed), through midColor, to fastColor on the Y axis
+	const glm::vec3 slowColor{0.15f, 0.25f, 0.90f};   // Blue
+	const glm::vec3 midColor{0.20f, 0.85f, 0.90f};    // Cyan
+	const glm::vec3 fastColor{1.00f, 0.50f, 0.10f};   // Orange, distinct from the yellow core
+	const float particleAlpha = 0.7f;
+	std::vector<glm::vec4> particleColors;             // Per particle, fixed since speeds are
 
 	// Fog shows the density excess over the background, (rho - rho0) / delta_rho,
 	// sampled on a fogResolution^3 grid. The fog box is wider than the lattice so
@@ -115,11 +121,13 @@ private:
 
 	void createLattice();
 	void setParticlesVisible(bool visible);
+	void applyDisplayMode();
 	void updateMotion(float deltaTime);
 
 	void createFogVolume();
 	void destroyFogVolume();
 	float calculateOrbitalSpeed(float horizontalRadius) const;
+	glm::vec4 speedColor(float angularSpeed) const;
 
 	float densityField(glm::vec3 const &pos) const;
 	float refractiveIndex(glm::vec3 const &pos) const;
