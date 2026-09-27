@@ -27,12 +27,6 @@
 
 #include <glm/glm.hpp>
 
-/**
-This is based on Chantal Roth's general relativity
-density model here:
-
-https://jsfiddle.net/Chenopdodium/n879e5dh/49/
- */
 class AetherDensityVisualizer : public AetherPhysicsModel
 {
 public:
