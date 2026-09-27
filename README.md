@@ -40,6 +40,11 @@ You can switch the wave between **transverse** and **longitudinal**. Set the
 medium, wave type, viscosity and driving frequency from the on-screen panel or
 the keyboard (see below).
 
+Each model has an **About this view** panel explaining the physics on screen.
+Its last paragraph follows what you're looking at (fog or particles; the
+current medium and wave type). Drag its title bar to move it, or click the
+arrow to collapse it.
+
 ## Controls
 
 ### Global

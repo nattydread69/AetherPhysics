@@ -20,6 +20,11 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include "lightVulkanGraphics/ui/GuiContext.h"
+#include "lightVulkanGraphics/ui/Panel.h"
+#include "lightVulkanGraphics/ui/widgets/Label.h"
+#include "lightVulkanGraphics/ui/widgets/Separator.h"
+
 PhysicsModel::PhysicsModel(lightGraphics::lightVulkanGraphics& app,
 						   std::string const &name)
 : lightGraphics::GraphicsModel(app, name)
@@ -52,4 +57,34 @@ glm::vec3 PhysicsModel::transverseBasis2(const glm::vec3& direction)
 	return glm::normalize(glm::cross(normalizedDir, basis1));
 }
 
+void PhysicsModel::createInfoPanel(const lightGraphics::ui::Rect& bounds, const std::string& title,
+								   const std::vector<std::string>& paragraphs)
+{
+	destroyInfoPanel();
 
+	infoPanel = app_.gui().createPanel(title, bounds, lightGraphics::ui::PanelFlags::Default);
+
+	// Wrapped labels don't break on newlines, so each paragraph is its own label
+	for (const std::string& paragraph : paragraphs) {
+		infoPanel->add<lightGraphics::ui::Label>(paragraph)->setWordWrap(true);
+	}
+	infoPanel->add<lightGraphics::ui::Separator>();
+	infoDetail = infoPanel->add<lightGraphics::ui::Label>("");
+	infoDetail->setWordWrap(true);
+}
+
+void PhysicsModel::setInfoDetail(const std::string& text)
+{
+	if (infoDetail) {
+		infoDetail->setText(text);
+	}
+}
+
+void PhysicsModel::destroyInfoPanel()
+{
+	if (infoPanel) {
+		app_.gui().destroyPanel(infoPanel);
+		infoPanel = nullptr;
+		infoDetail = nullptr;
+	}
+}

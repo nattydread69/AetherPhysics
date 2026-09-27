@@ -22,8 +22,16 @@
 
 #include "GraphicsModel.h"
 
+#include <string>
 #include <vector>
 #include <glm/glm.hpp>
+
+#include "lightVulkanGraphics/ui/Types.h"
+
+namespace lightGraphics::ui {
+class Panel;
+class Label;
+}
 
 class PhysicsModel : public lightGraphics::GraphicsModel
 {
@@ -43,4 +51,16 @@ public:
 
 protected:
 	float time = 0.0f;
+
+	// Read-only panel explaining the physics on screen: fixed paragraphs, then
+	// one detail paragraph (setInfoDetail) that follows the current view. The
+	// panel can be moved, resized, collapsed and scrolled.
+	void createInfoPanel(const lightGraphics::ui::Rect& bounds, const std::string& title,
+						 const std::vector<std::string>& paragraphs);
+	void setInfoDetail(const std::string& text);
+	void destroyInfoPanel();
+
+private:
+	lightGraphics::ui::Panel* infoPanel = nullptr;
+	lightGraphics::ui::Label* infoDetail = nullptr;
 };
