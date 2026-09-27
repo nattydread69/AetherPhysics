@@ -45,7 +45,8 @@ public:
 		LIQUID,
 		GAS,
 		SUPERSOLID,
-		SUPERFLUID
+		SUPERFLUID,
+		VORTEX_SUPERFLUID    // Superfluid with an elastic vortex lattice (Tkachenko-like transverse mode)
 	};
 
 	enum class WaveType {
@@ -132,6 +133,31 @@ private:
 		std::vector<std::vector<int>> grid; // Collision grid cells, reused between steps
 	};
 
+	// Sparse triangular array of quantized vortices, used by VORTEX_SUPERFLUID.
+	// It is a second degree of freedom alongside the fluid tracers: the bulk
+	// superfluid has no shear rigidity, but the ordered vortex array has an
+	// effective shear elasticity and carries a transverse (Tkachenko-like) mode.
+	// For now each vortex follows the analytic travelling mode
+	// (stepVortexLattice); a dynamically evolved vortex-displacement model can
+	// replace that function without changing the storage or drawing.
+	struct VortexNode {
+		glm::vec2 base;          // Equilibrium position (canvas pixels)
+		glm::vec2 pos;           // Current position
+		int objectIndex = -1;
+	};
+
+	struct VortexLink {
+		int a, b;                // Node indices of neighbouring vortices
+		int objectIndex = -1;
+	};
+
+	struct VortexLattice {
+		std::vector<VortexNode> nodes;
+		std::vector<VortexLink> links;
+		float spacing = 45.0f;   // Along a row (pixels)
+		float rowSpacing = 0.0f; // Chosen so an even number of rows fills the canvas height exactly
+	};
+
 	float frameAccumulator = 0.0f;      // Fractional animation frames carried between updates
 	std::mt19937 rng{std::random_device{}()};
 	std::uniform_real_distribution<float> random01{0.0f, 1.0f};
@@ -142,10 +168,12 @@ private:
 	// transverse waves in fluids the shear penetration envelope
 	int sourceLineIndex = -1;
 	std::vector<int> probeSegments;
-	std::vector<int> envelopeSegments;
+	std::vector<int> envelopeSegments;        // Viscous shear penetration
+	std::vector<int> vortexEnvelopeSegments;  // Vortex-elastic transverse reach (VORTEX_SUPERFLUID)
 
 	std::unique_ptr<SolidLattice> solid;
 	std::unique_ptr<FluidSystem> fluid;
+	std::unique_ptr<VortexLattice> vortices;
 
 	// UI components
 	lightGraphics::ui::Panel* uiPanel = nullptr;
@@ -159,15 +187,18 @@ private:
 	void buildScene();
 	void buildSolid();
 	void buildFluid();
+	void buildVortexLattice();
 	void buildOverlays();
 	void stepFrame();
 	void stepPhysics(float dt);
 	void stepSolid(float dt, float disp, float vel);
 	void stepFluid(float dt, float omega);
+	void stepVortexLattice(float omega);
 
 	void draw();
 	void drawSolid();
 	void drawFluid();
+	void drawVortexLattice();
 	void drawProbeLine(const std::vector<glm::vec2>& points, const glm::vec4& color, float widthPx);
 	float viewHeight() const;
 	glm::vec3 toWorld(glm::vec2 canvasPos, float z = 0.0f) const;
@@ -184,7 +215,23 @@ private:
 		// Share of the fluid that viscosity can drag sideways: 1 for ordinary
 		// fluids, 0 for a superfluid at absolute zero (it slips past the plate)
 		float normalFraction = 1.0f;
+
+		// Vortex-lattice elasticity, a separate restoring mechanism from
+		// viscosity. Only VORTEX_SUPERFLUID sets vortexElasticFraction above 0;
+		// its bulk still has normalFraction 0 and no shear modulus. All values
+		// are visualisation parameters in canvas units (pixels, frames), not
+		// calibrated physical quantities.
+		float vortexElasticFraction = 0.0f; // Strength of the vortex-carried transverse mode
+		float tkachenkoSpeed = 3.0f;        // cT: transverse wave speed scale of the vortex lattice (px/frame)
+		float rotationRate = 0.08f;         // Omega: background rotation sustaining the vortices (rad/frame)
+		float vortexAtten = 2000.0f;        // e-folding distance of the vortex mode (px); no viscosity involved
 	};
 
 	FluidParams getFluidParams() const;
+	// Wavenumber of the vortex-lattice mode at the given driving frequency
+	// (px^-1), from the Tkachenko-like dispersion in TkachenkoDispersion.h
+	float vortexModeWaveNumber(const FluidParams& params, float omega) const;
+
+	// Vortex displacement relative to the source's, chosen for clarity
+	static constexpr float VORTEX_AMPLITUDE_SCALE = 0.7f;
 };

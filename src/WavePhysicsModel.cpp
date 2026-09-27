@@ -17,6 +17,7 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "WavePhysicsModel.h"
+#include "TkachenkoDispersion.h"
 #include <iostream>
 #include <cmath>
 #include <limits>
@@ -66,9 +67,11 @@ void WavePhysicsModel::cleanup()
 	destroyUIPanel();
 	solid.reset();
 	fluid.reset();
+	vortices.reset();
 	sourceLineIndex = -1;
 	probeSegments.clear();
 	envelopeSegments.clear();
+	vortexEnvelopeSegments.clear();
 
 	// Remove all physics objects from the graphics system
 	app_.clearObjects();
@@ -84,7 +87,8 @@ void WavePhysicsModel::setMediumMode(MediumMode mode)
 	// parameters)
 	if (mode == MediumMode::VISCOUS) viscosity = 0.8f;
 	else if (mode == MediumMode::LIQUID) viscosity = 0.2f;
-	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID || mode == MediumMode::SUPERFLUID) viscosity = 0.0f;
+	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID || mode == MediumMode::SUPERFLUID ||
+	         mode == MediumMode::VORTEX_SUPERFLUID) viscosity = 0.0f;
 
 	buildScene();
 
@@ -124,7 +128,8 @@ void WavePhysicsModel::createUIPanel()
 	uiPanel->add<lightGraphics::ui::Label>("Medium Mode");
 	modeDropdown = uiPanel->add<lightGraphics::ui::DropDown>(
 		"",
-		std::vector<std::string>{"Solid", "Viscous", "Liquid", "Gas", "Supersolid", "Superfluid"},
+		std::vector<std::string>{"Solid", "Viscous", "Liquid", "Gas", "Supersolid", "Superfluid",
+		                         "Elastic superfluid (vortex lattice)"},
 		static_cast<int>(mediumMode)
 	);
 	modeDropdown->setOnChange([this](int index) {
@@ -235,7 +240,7 @@ bool WavePhysicsModel::handleKeyPress(int key)
 	constexpr float VISCOSITY_STEP = 0.1f;
 	constexpr float FREQUENCY_STEP = 0.01f;
 
-	// Media use F5-F10 (and keypad 1-6): the library already binds the top-row
+	// Media use F5-F11 (and keypad 1-7): the library already binds the top-row
 	// digits 1-4 to its own render modes (wireframe, unlit, ...)
 	switch (key) {
 		case GLFW_KEY_F5: case GLFW_KEY_KP_1: setMediumMode(MediumMode::SOLID); break;
@@ -244,6 +249,7 @@ bool WavePhysicsModel::handleKeyPress(int key)
 		case GLFW_KEY_F8: case GLFW_KEY_KP_4: setMediumMode(MediumMode::GAS); break;
 		case GLFW_KEY_F9: case GLFW_KEY_KP_5: setMediumMode(MediumMode::SUPERSOLID); break;
 		case GLFW_KEY_F10: case GLFW_KEY_KP_6: setMediumMode(MediumMode::SUPERFLUID); break;
+		case GLFW_KEY_F11: case GLFW_KEY_KP_7: setMediumMode(MediumMode::VORTEX_SUPERFLUID); break;
 		case GLFW_KEY_T:
 			setWaveType(waveType == WaveType::TRANSVERSE ? WaveType::LONGITUDINAL : WaveType::TRANSVERSE);
 			break;
@@ -314,8 +320,23 @@ void WavePhysicsModel::updateInfoText()
 				  "the plate and nothing is dragged sideways; the curve near the bottom stays flat."
 				: "Superfluid: supported with no loss. Nothing dissipates, so sound crosses "
 				  "the whole scene undamped.";
-			text += " Frictionless like the supersolid, yet unable to carry shear. This is the "
-				"absolute-zero limit; a real superfluid also has a viscous normal part.";
+			text += " This is the homogeneous control case: no viscosity, no shear rigidity and "
+				"no vortex lattice. Frictionless like the supersolid, yet unable to carry shear. "
+				"It is the absolute-zero limit; a real superfluid also has a viscous normal part.";
+			break;
+		case MediumMode::VORTEX_SUPERFLUID:
+			text += "Elastic superfluid (vortex lattice): the bulk fluid is still inviscid and has "
+				"no ordinary static shear rigidity. An ordered array of quantized vortices can, "
+				"however, have an effective shear elasticity. ";
+			text += transverse
+				? "Deforming the vortex array sideways gives a Tkachenko-like transverse collective "
+				  "mode, which travels across the scene; the cyan curve near the bottom shows its long "
+				  "reach, while the white viscous curve stays flat. The linked cyan markers are the "
+				  "vortices; the small particles are the surrounding superfluid. Unlike a supersolid, "
+				  "the bulk itself has no crystalline rigidity."
+				: "Sound travels with no loss, as in the plain superfluid; the vortices are simply "
+				  "carried along by it. Switch to transverse (T) to see the vortex-carried mode.";
+			text += " An illustrative reduced model in simulation units, not a calibrated one.";
 			break;
 	}
 
@@ -333,6 +354,7 @@ void WavePhysicsModel::printModeMenu() const
 		<< "║  F8: GAS          - Low density fluid  ║\n"
 		<< "║  F9: SUPERSOLID   - Lossless demo      ║\n"
 		<< "║  F10: SUPERFLUID  - Zero viscosity     ║\n"
+		<< "║  F11: VORTEX SF   - Vortex elasticity  ║\n"
 		<< "║                                        ║\n"
 		<< "║  T:   Toggle wave type (Trans/Long)    ║\n"
 		<< "║  +/=: Increase viscosity               ║\n"
@@ -355,6 +377,7 @@ void WavePhysicsModel::printStatus() const
 		case MediumMode::GAS: modeStr = "GAS"; break;
 		case MediumMode::SUPERSOLID: modeStr = "SUPERSOLID"; break;
 		case MediumMode::SUPERFLUID: modeStr = "SUPERFLUID"; break;
+		case MediumMode::VORTEX_SUPERFLUID: modeStr = "ELASTIC SUPERFLUID (VORTEX LATTICE)"; break;
 	}
 
 	std::string waveStr = (waveType == WaveType::TRANSVERSE) ? "TRANSVERSE" : "LONGITUDINAL";
@@ -408,7 +431,13 @@ void WavePhysicsModel::buildScene()
 	if (mediumMode == MediumMode::SOLID || mediumMode == MediumMode::SUPERSOLID) {
 		buildSolid();
 	} else {
+		// Every other medium is a fluid of tracers. The vortex-elastic
+		// superfluid stays a fluid too; its vortex array is an extra degree of
+		// freedom, not a replacement bulk lattice.
 		buildFluid();
+		if (mediumMode == MediumMode::VORTEX_SUPERFLUID) {
+			buildVortexLattice();
+		}
 	}
 	buildOverlays();
 }
@@ -499,6 +528,57 @@ void WavePhysicsModel::buildFluid()
 	}
 }
 
+void WavePhysicsModel::buildVortexLattice()
+{
+	vortices = std::make_unique<VortexLattice>();
+	VortexLattice& v = *vortices;
+
+	// Triangular lattice: rows sqrt(3)/2 spacing apart, alternate rows offset
+	// by half a spacing. An even number of rows filling the canvas height keeps
+	// the pattern continuous across the vertical wrap.
+	const float idealRowSpacing = v.spacing * std::sqrt(3.0f) * 0.5f;
+	const int rows = std::max(2, 2 * static_cast<int>(std::lround(CANVAS_H / idealRowSpacing * 0.5f)));
+	v.rowSpacing = CANVAS_H / rows;
+	const float x0 = SOURCE_X + 0.5f * v.spacing;
+	const int cols = static_cast<int>((CANVAS_W - 10.0f - x0 - 0.5f * v.spacing) / v.spacing) + 1;
+
+	auto idx = [cols](int r, int c) { return r * cols + c; };
+	for (int r = 0; r < rows; ++r) {
+		for (int c = 0; c < cols; ++c) {
+			const glm::vec2 base(x0 + c * v.spacing + ((r % 2) ? 0.5f * v.spacing : 0.0f), (r + 0.5f) * v.rowSpacing);
+			v.nodes.push_back({base, base, -1});
+		}
+	}
+
+	// Nearest neighbours: along the row, and the two in the next row down
+	// (wrapping vertically). Links are drawn before the cores so they sit under them.
+	for (int r = 0; r < rows; ++r) {
+		const int next = (r + 1) % rows;
+		const int shift = (r % 2) ? 0 : -1;  // Column offset of the down-left neighbour
+		for (int c = 0; c < cols; ++c) {
+			if (c + 1 < cols) {
+				v.links.push_back({idx(r, c), idx(r, c + 1), -1});
+			}
+			for (int dc : {shift, shift + 1}) {
+				if (c + dc >= 0 && c + dc < cols) {
+					v.links.push_back({idx(r, c), idx(next, c + dc), -1});
+				}
+			}
+		}
+	}
+	for (VortexLink& link : v.links) {
+		link.objectIndex = addSegment();
+	}
+
+	// Vortex cores: about twice the tracer size, cyan like the superfluid
+	const float diameter = 11.0f * PX;
+	for (VortexNode& node : v.nodes) {
+		app_.addObject(lightGraphics::ShapeType::SPHERE, toWorld(node.pos, 0.03f), glm::vec3(diameter),
+					   rgba(34, 211, 238, 0.95f), glm::quat(1, 0, 0, 0), "Vortex", 0.1f);
+		node.objectIndex = static_cast<int>(app_.getObjectCount()) - 1;
+	}
+}
+
 void WavePhysicsModel::buildOverlays()
 {
 	sourceLineIndex = addSegment();
@@ -510,9 +590,13 @@ void WavePhysicsModel::buildOverlays()
 	}
 
 	envelopeSegments.clear();
+	vortexEnvelopeSegments.clear();
 	if (fluid) {
 		for (float x = SOURCE_X + 4.0f; x < CANVAS_W; x += 4.0f) {
 			envelopeSegments.push_back(addSegment());
+			if (vortices) {
+				vortexEnvelopeSegments.push_back(addSegment());
+			}
 		}
 	}
 }
@@ -566,6 +650,9 @@ void WavePhysicsModel::stepPhysics(float dt)
 	}
 	if (fluid) {
 		stepFluid(dt, omega);
+	}
+	if (vortices) {
+		stepVortexLattice(omega);
 	}
 }
 
@@ -652,6 +739,18 @@ WavePhysicsModel::FluidParams WavePhysicsModel::getFluidParams() const
 		// and no thermal jitter
 		p = {8.0f, 0.6f, 0.0f, 0.0f, 7.5f, std::numeric_limits<float>::infinity()};
 		p.normalFraction = 0.0f;
+		p.vortexElasticFraction = 0.0f;  // Homogeneous: no vortex lattice either
+	} else if (mediumMode == MediumMode::VORTEX_SUPERFLUID) {
+		// The same inviscid superfluid (normalFraction 0: no viscous drag, no
+		// bulk shear modulus), threaded by an ordered vortex array whose
+		// effective elasticity carries a transverse Tkachenko-like mode.
+		// Visualisation parameters in canvas units, not calibrated physics.
+		p = {8.0f, 0.6f, 0.0f, 0.0f, 7.5f, std::numeric_limits<float>::infinity()};
+		p.normalFraction = 0.0f;
+		p.vortexElasticFraction = 1.0f;
+		p.tkachenkoSpeed = 3.0f;
+		p.rotationRate = 0.08f;
+		p.vortexAtten = 2000.0f;
 	}
 
 	return p;
@@ -667,19 +766,26 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 	const float driveX = (waveType == WaveType::LONGITUDINAL) ? (SOURCE_X + disp) : SOURCE_X;
 
 	// 1) Impose an analytic velocity field:
-	//    transverse: oscillatory shear layer  vy ~ exp(-x/delta) cos(wt - x/delta),
-	//                carried only by the fluid's normal (viscous) fraction
+	//    transverse: two separate restoring mechanisms, added together:
+	//      viscous shear layer  vy ~ normalFraction exp(-x/delta) cos(wt - x/delta)
+	//      vortex-elastic mode  vy ~ vortexElasticFraction exp(-x/L) cos(wt - kT x),
+	//                           kT from the Tkachenko-like dispersion
 	//    longitudinal: travelling sound wave  vx ~ exp(-x/L) cos(wt - kx)
 	const float kShear = 1.0f / std::max(8.0f, params.deltaShear);
 	const float kSound = omega / std::max(2.0f, params.soundSpeed);
+	const float kVortex = vortexModeWaveNumber(params, omega);
+	const float vortexAtten = std::max(1.0f, params.vortexAtten);
 	const float damp = std::exp(-params.drag * dt);
 
 	for (Particle& p : f.particles) {
 		const float xDist = std::max(0.0f, p.pos.x - driveX);
 		glm::vec2 field(0.0f);
 		if (waveType == WaveType::TRANSVERSE) {
-			const float env = std::exp(-kShear * xDist);
-			field.y = params.normalFraction * (AMP * omega) * std::cos(omega * time - kShear * xDist) * env;
+			const float viscous = params.normalFraction * std::exp(-kShear * xDist) *
+				std::cos(omega * time - kShear * xDist);
+			const float vortexElastic = params.vortexElasticFraction * std::exp(-xDist / vortexAtten) *
+				std::cos(omega * time - kVortex * xDist);
+			field.y = (AMP * omega) * (viscous + vortexElastic);
 		} else {
 			const float env = std::exp(-xDist / std::max(80.0f, params.soundAtten));
 			field.x = (AMP * omega) * std::cos(omega * time - kSound * xDist) * env;
@@ -753,6 +859,47 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 	}
 }
 
+float WavePhysicsModel::vortexModeWaveNumber(const FluidParams& params, float omega) const
+{
+	if (params.vortexElasticFraction <= 0.0f) {
+		return 0.0f;
+	}
+	return aether::tkachenkoWaveNumber(omega, params.tkachenkoSpeed, params.soundSpeed, params.rotationRate);
+}
+
+void WavePhysicsModel::stepVortexLattice(float omega)
+{
+	// Prescribed travelling mode for now: each vortex is displaced as the
+	// analytic Tkachenko-like wave dictates. A dynamically evolved
+	// vortex-displacement model would replace this function.
+	VortexLattice& v = *vortices;
+	const FluidParams params = getFluidParams();
+	const float amplitude = VORTEX_AMPLITUDE_SCALE * AMP;
+
+	if (waveType == WaveType::TRANSVERSE) {
+		// Transverse deformation of the vortex array, carried by its elasticity
+		const float k = vortexModeWaveNumber(params, omega);
+		const float atten = std::max(1.0f, params.vortexAtten);
+		for (VortexNode& node : v.nodes) {
+			const float xDist = std::max(0.0f, node.base.x - SOURCE_X);
+			const float dy = params.vortexElasticFraction * amplitude *
+				std::sin(omega * time - k * xDist) * std::exp(-xDist / atten);
+			node.pos = glm::vec2(node.base.x, wrapPosition(node.base.y + dy, CANVAS_H));
+		}
+	} else {
+		// Longitudinal: vortices are carried along by the bulk sound wave, the
+		// same displacement the surrounding superfluid has (no elasticity involved)
+		const float driveX = SOURCE_X + AMP * std::sin(time * omega);
+		const float k = omega / std::max(2.0f, params.soundSpeed);
+		const float atten = std::max(80.0f, params.soundAtten);
+		for (VortexNode& node : v.nodes) {
+			const float xDist = std::max(0.0f, node.base.x - driveX);
+			const float dx = amplitude * std::sin(omega * time - k * xDist) * std::exp(-xDist / atten);
+			node.pos = glm::vec2(node.base.x + dx, node.base.y);
+		}
+	}
+}
+
 // ---- Drawing -------------------------------------------------------------------
 
 float WavePhysicsModel::viewHeight() const
@@ -801,12 +948,12 @@ void WavePhysicsModel::draw()
 {
 	const float h = viewHeight();
 
-	// Driving plane: purple for supersolid, cyan for superfluid, blue otherwise
+	// Driving plane: purple for supersolid, cyan for the superfluids, blue otherwise
 	const float disp = AMP * std::sin(time * frequency);
 	const float sx = (waveType == WaveType::LONGITUDINAL) ? SOURCE_X + disp : SOURCE_X;
 	const glm::vec4 planeColor =
 		(mediumMode == MediumMode::SUPERSOLID) ? rgba(168, 85, 247, 0.81f) :
-		(mediumMode == MediumMode::SUPERFLUID) ? rgba(34, 211, 238, 0.81f) :
+		(mediumMode == MediumMode::SUPERFLUID || mediumMode == MediumMode::VORTEX_SUPERFLUID) ? rgba(34, 211, 238, 0.81f) :
 		rgba(96, 165, 250, 0.81f);
 	placeSegment(sourceLineIndex, glm::vec2(sx, 0.0f), glm::vec2(sx, h), 2.0f, planeColor, 0.01f);
 
@@ -889,17 +1036,54 @@ void WavePhysicsModel::drawFluid()
 	}
 	drawProbeLine(points, rgba(226, 232, 240, 0.64f), 2.0f);
 
-	// Shear penetration envelope near the bottom, for transverse waves only.
-	// Flat for a superfluid, which the plate can't drag at all.
+	// Envelopes near the bottom, for transverse waves only. They show the two
+	// restoring mechanisms separately:
+	//  - white: viscous shear penetration, scaled by normalFraction (flat for
+	//    both superfluids, which the plate can't drag)
+	//  - cyan: vortex-elastic reach, scaled by vortexElasticFraction (only the
+	//    vortex-lattice superfluid; long-range, set by vortexAtten)
 	const FluidParams params = getFluidParams();
-	const float k = 1.0f / std::max(8.0f, params.deltaShear);
-	const float height = 55.0f * params.normalFraction;
-	glm::vec2 prev(SOURCE_X, CANVAS_H * 0.85f - height);
+	const float kShear = 1.0f / std::max(8.0f, params.deltaShear);
+	const float vortexAtten = std::max(1.0f, params.vortexAtten);
+	const float baseline = CANVAS_H * 0.85f;
+	const float viscousHeight = 55.0f * params.normalFraction;
+	const float vortexHeight = 55.0f * params.vortexElasticFraction;
+	glm::vec2 prev(SOURCE_X, baseline - viscousHeight);
+	glm::vec2 prevVortex(SOURCE_X, baseline - vortexHeight);
 	for (size_t i = 0; i < envelopeSegments.size(); ++i) {
 		const float x = SOURCE_X + 4.0f * (i + 1);
-		const glm::vec2 next(x, CANVAS_H * 0.85f - std::exp(-k * (x - SOURCE_X)) * height);
+		const float xDist = x - SOURCE_X;
+		const glm::vec2 next(x, baseline - std::exp(-kShear * xDist) * viscousHeight);
 		placeSegment(envelopeSegments[i], prev, next, 1.5f,
 					 transverse ? rgba(255, 255, 255, 0.13f) : glm::vec4(0.0f), 0.02f);
 		prev = next;
+
+		if (i < vortexEnvelopeSegments.size()) {
+			const glm::vec2 nextVortex(x, baseline - std::exp(-xDist / vortexAtten) * vortexHeight);
+			placeSegment(vortexEnvelopeSegments[i], prevVortex, nextVortex, 2.0f,
+						 transverse ? rgba(34, 211, 238, 0.45f) : glm::vec4(0.0f), 0.02f);
+			prevVortex = nextVortex;
+		}
+	}
+
+	if (vortices) {
+		drawVortexLattice();
+	}
+}
+
+void WavePhysicsModel::drawVortexLattice()
+{
+	const VortexLattice& v = *vortices;
+
+	// Faint links between neighbouring vortices, along the shortest wrapped path
+	const glm::vec4 linkColor = rgba(34, 211, 238, 0.28f);
+	for (const VortexLink& link : v.links) {
+		const glm::vec2 a = v.nodes[link.a].pos;
+		const glm::vec2 b = v.nodes[link.b].pos;
+		placeSegment(link.objectIndex, a, glm::vec2(b.x, a.y + wrapDelta(b.y - a.y, CANVAS_H)), 1.5f, linkColor, 0.025f);
+	}
+
+	for (const VortexNode& node : v.nodes) {
+		app_.setObjectPosition(node.objectIndex, toWorld(node.pos, 0.03f));
 	}
 }
