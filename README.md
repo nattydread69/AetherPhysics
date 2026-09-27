@@ -98,7 +98,7 @@ startup.
 - A C++20 compiler (GCC 11+, Clang 14+, or MSVC 2022)
 - CMake 3.16 or newer
 - A GPU and driver that support Vulkan
-- Light Vulkan Graphics, installed so that
+- Light Vulkan Graphics 2.1.1 or later, installed so that
   `find_package(LightVulkanGraphics CONFIG)` can find it
 - [GLFW 3](https://www.glfw.org/)
 - [GLM](https://github.com/g-truc/glm)

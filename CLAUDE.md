@@ -22,7 +22,7 @@ This applies to:
 - `/build/` - Build artifacts (excluded from git via .gitignore)
 
 ## Dependencies
-- Light Vulkan Graphics (`find_package(LightVulkanGraphics CONFIG REQUIRED)`), which provides the renderer, `GraphicsModel` and the `lightGraphics::ui` widgets. The fog needs a library build with `VolumeColorSource` and the wait-for-GPU destroy fix.
+- Light Vulkan Graphics 2.1.1 or later (`find_package(LightVulkanGraphics 2.1.1 CONFIG REQUIRED)`), which provides the renderer, `GraphicsModel` and the `lightGraphics::ui` widgets. 2.1.1 is the first version with `VolumeColorSource` and the wait-for-GPU destroy fix, both of which the fog needs.
 - GLFW 3 and GLM
 - C++20, CMake 3.16+
 
