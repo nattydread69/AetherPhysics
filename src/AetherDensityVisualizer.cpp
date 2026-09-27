@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -44,6 +45,7 @@ void AetherDensityVisualizer::initialize()
 	std::cout << "Initializing Aether Density Visualizer..." << std::endl;
 
 	createLattice();
+	createFogVolume();
 
 	launchNewRay();
 	createRaySegments();
@@ -54,13 +56,105 @@ void AetherDensityVisualizer::initialize()
 void AetherDensityVisualizer::update(float deltaTime)
 {
 	time += deltaTime;
-	updateMotion(deltaTime);
+	if (displayMode == DisplayMode::PARTICLES) {
+		updateMotion(deltaTime);
+	}
 	updateLightRay(deltaTime);
 }
 
 void AetherDensityVisualizer::cleanup()
 {
-	// Graphics objects are cleared by PhysicsApp when switching models
+	// Graphics objects are cleared by PhysicsApp when switching models, but the
+	// fog volume is a separate resource that clearObjects() doesn't touch
+	destroyFogVolume();
+}
+
+void AetherDensityVisualizer::setDisplayMode(DisplayMode mode)
+{
+	if (mode == displayMode) return;
+	displayMode = mode;
+
+	const bool fog = (mode == DisplayMode::FOG);
+	setParticlesVisible(!fog);
+	if (fogVolume.isValid()) {
+		if (fog) {
+			app_.drawVolume(fogVolume, {lightGraphics::RenderLayer::Volume, 0.0f});
+		} else {
+			app_.hideVolume(fogVolume);
+		}
+	}
+
+	std::cout << "Density display: " << (fog ? "fog" : "particles") << std::endl;
+}
+
+void AetherDensityVisualizer::toggleDisplayMode()
+{
+	setDisplayMode(displayMode == DisplayMode::PARTICLES ? DisplayMode::FOG : DisplayMode::PARTICLES);
+}
+
+void AetherDensityVisualizer::setParticlesVisible(bool visible)
+{
+	const glm::vec4 color = visible ? particleColor : glm::vec4(0.0f);
+	for (int index : sphereObjectIndices) {
+		app_.setObjectColor(index, color);
+	}
+}
+
+void AetherDensityVisualizer::createFogVolume()
+{
+	const int n = fogResolution;
+	std::vector<float> field(static_cast<size_t>(n) * n * n);
+	for (int z = 0; z < n; ++z) {
+		for (int y = 0; y < n; ++y) {
+			for (int x = 0; x < n; ++x) {
+				const glm::vec3 pos = (glm::vec3(x, y, z) / static_cast<float>(n - 1) * 2.0f - 1.0f) * fogHalfRange;
+				field[x + n * (y + n * z)] = (densityField(pos) - rho0) / delta_rho;
+			}
+		}
+	}
+
+	lightGraphics::Texture3DDescription textureDescription;
+	textureDescription.width = n;
+	textureDescription.height = n;
+	textureDescription.depth = n;
+	textureDescription.format = lightGraphics::TextureFormat::R32_SFLOAT;
+	fogTexture = app_.createTexture3D(textureDescription, field.data(), field.size() * sizeof(float));
+
+	// Transparent at background density, through aether blue, to pale blue at the peak
+	fogTransferFunction = app_.createTransferFunction({
+		{0.0f, glm::vec4(0.1f, 0.3f, 0.8f, 0.0f)},
+		{0.5f, glm::vec4(0.2f, 0.5f, 0.95f, 0.5f)},
+		{1.0f, glm::vec4(0.7f, 0.9f, 1.0f, 1.0f)},
+	});
+
+	lightGraphics::VolumeRenderDescription volumeDescription;
+	volumeDescription.volumeTexture = fogTexture;
+	volumeDescription.transferFunction = fogTransferFunction;
+	volumeDescription.volumeMin = glm::vec3(-fogHalfRange);
+	volumeDescription.volumeMax = glm::vec3(fogHalfRange);
+	volumeDescription.opacityModel = lightGraphics::VolumeOpacityModel::ExponentialExtinction;
+	volumeDescription.opacityScale = fogOpacity;
+	volumeDescription.raymarchSteps = 128;
+	volumeDescription.enableJitter = true;
+	fogVolume = app_.createVolume(volumeDescription);
+	// Created hidden; setDisplayMode(FOG) draws it
+}
+
+void AetherDensityVisualizer::destroyFogVolume()
+{
+	// The volume references the texture and transfer function, so it goes first
+	if (fogVolume.isValid()) {
+		app_.destroyVolume(fogVolume);
+		fogVolume = {};
+	}
+	if (fogTransferFunction.isValid()) {
+		app_.destroyTransferFunction(fogTransferFunction);
+		fogTransferFunction = {};
+	}
+	if (fogTexture.isValid()) {
+		app_.destroyTexture3D(fogTexture);
+		fogTexture = {};
+	}
 }
 
 void AetherDensityVisualizer::createLattice()
@@ -75,8 +169,6 @@ void AetherDensityVisualizer::createLattice()
 	orbitalAngles.reserve(totalGridPoints);
 	orbitalSpeeds.reserve(totalGridPoints);
 
-	// Blue aether particles - small, uniform and slightly transparent
-	const glm::vec4 color(0.1f, 0.3f, 0.8f, 0.7f);
 	const float sphereSize = sphereRadius * 0.2f;
 
 	for (int i = 0; i < Nx; i++)
@@ -101,7 +193,7 @@ void AetherDensityVisualizer::createLattice()
 					lightGraphics::ShapeType::CUBE,
 					position,
 					glm::vec3(sphereSize),
-					color,
+					particleColor,
 					glm::quat(1, 0, 0, 0),
 					"Aether Sphere " + std::to_string(sphereObjectIndices.size()),
 					1.0f // Mass

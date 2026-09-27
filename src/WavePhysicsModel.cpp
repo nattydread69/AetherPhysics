@@ -208,12 +208,14 @@ bool WavePhysicsModel::handleKeyPress(int key)
 	constexpr float VISCOSITY_STEP = 0.1f;
 	constexpr float FREQUENCY_STEP = 0.01f;
 
+	// Media use F5-F9 (and keypad 1-5): the library already binds the top-row
+	// digits 1-4 to its own render modes (wireframe, unlit, ...)
 	switch (key) {
-		case GLFW_KEY_1: case GLFW_KEY_KP_1: setMediumMode(MediumMode::SOLID); break;
-		case GLFW_KEY_2: case GLFW_KEY_KP_2: setMediumMode(MediumMode::VISCOUS); break;
-		case GLFW_KEY_3: case GLFW_KEY_KP_3: setMediumMode(MediumMode::LIQUID); break;
-		case GLFW_KEY_4: case GLFW_KEY_KP_4: setMediumMode(MediumMode::GAS); break;
-		case GLFW_KEY_5: case GLFW_KEY_KP_5: setMediumMode(MediumMode::SUPERSOLID); break;
+		case GLFW_KEY_F5: case GLFW_KEY_KP_1: setMediumMode(MediumMode::SOLID); break;
+		case GLFW_KEY_F6: case GLFW_KEY_KP_2: setMediumMode(MediumMode::VISCOUS); break;
+		case GLFW_KEY_F7: case GLFW_KEY_KP_3: setMediumMode(MediumMode::LIQUID); break;
+		case GLFW_KEY_F8: case GLFW_KEY_KP_4: setMediumMode(MediumMode::GAS); break;
+		case GLFW_KEY_F9: case GLFW_KEY_KP_5: setMediumMode(MediumMode::SUPERSOLID); break;
 		case GLFW_KEY_T:
 			setWaveType(waveType == WaveType::TRANSVERSE ? WaveType::LONGITUDINAL : WaveType::TRANSVERSE);
 			break;
@@ -246,11 +248,11 @@ void WavePhysicsModel::printModeMenu() const
 	std::cout << "\n╔════════════════════════════════════════╗\n"
 		<< "║       WAVE PHYSICS MODEL - MODES       ║\n"
 		<< "╠════════════════════════════════════════╣\n"
-		<< "║  1: SOLID         - Elastic lattice    ║\n"
-		<< "║  2: VISCOUS       - Tunable viscosity  ║\n"
-		<< "║  3: LIQUID        - Incompressible     ║\n"
-		<< "║  4: GAS           - Low density fluid  ║\n"
-		<< "║  5: SUPERSOLID    - Lossless demo      ║\n"
+		<< "║  F5: SOLID        - Elastic lattice    ║\n"
+		<< "║  F6: VISCOUS      - Tunable viscosity  ║\n"
+		<< "║  F7: LIQUID       - Incompressible     ║\n"
+		<< "║  F8: GAS          - Low density fluid  ║\n"
+		<< "║  F9: SUPERSOLID   - Lossless demo      ║\n"
 		<< "║                                        ║\n"
 		<< "║  T:   Toggle wave type (Trans/Long)    ║\n"
 		<< "║  +/=: Increase viscosity               ║\n"

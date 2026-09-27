@@ -44,6 +44,15 @@ public:
 	virtual void update(float deltaTime) override final;
 	virtual void cleanup() override final;
 
+	// How the density field is shown: the orbiting particle lattice, or volumetric fog
+	enum class DisplayMode {
+		PARTICLES,
+		FOG
+	};
+	void setDisplayMode(DisplayMode mode);
+	void toggleDisplayMode();
+	DisplayMode getDisplayMode() const { return displayMode; }
+
 	// Public methods for ray control
 	void setRayLength(int segments);
 	int maxRaySegments = 50;           // Number of visible ray segments
@@ -60,6 +69,19 @@ private:
 	float beta = 1.0f;                 // Refractive index n = 1 + beta * (rho - rho0)
 	int Nx = 25;                       // Lattice resolution (Nx^3 particles), set from the GPU tier
 	float halfRange = 3.0f;            // Lattice spans [-halfRange, halfRange] on each axis
+
+	DisplayMode displayMode = DisplayMode::PARTICLES;
+	const glm::vec4 particleColor{0.1f, 0.3f, 0.8f, 0.7f}; // Blue, slightly transparent
+
+	// Fog shows the density excess over the background, (rho - rho0) / delta_rho,
+	// sampled on a fogResolution^3 grid. The fog box is wider than the lattice so
+	// the fog fades out before reaching its edges.
+	int fogResolution = 64;
+	float fogHalfRange = 5.0f;
+	float fogOpacity = 0.5f;           // Optical depth per unit length at peak density
+	lightGraphics::Texture3DHandle fogTexture;
+	lightGraphics::TransferFunctionHandle fogTransferFunction;
+	lightGraphics::VolumeHandle fogVolume;
 
 	// Orbital motion about the Y axis
 	float baseAngularSpeed = 0.1f;     // Angular speed at the lattice edge (rad/s)
@@ -92,7 +114,11 @@ private:
 	std::mt19937 rng{std::random_device{}()};
 
 	void createLattice();
+	void setParticlesVisible(bool visible);
 	void updateMotion(float deltaTime);
+
+	void createFogVolume();
+	void destroyFogVolume();
 	float calculateOrbitalSpeed(float horizontalRadius) const;
 
 	float densityField(glm::vec3 const &pos) const;
