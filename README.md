@@ -36,6 +36,7 @@ media can carry a transverse (shear) wave like light.
 | `GAS`        | Not supported: mostly thermal motion | Travels (sound)              |
 | `SUPERSOLID` | Travels with very little loss       | Travels with very little loss |
 | `SUPERFLUID` | Not supported at all: slips past the plate | Travels with no loss   |
+| `VORTEX_SUPERFLUID` | Travels as a collective mode of the vortex lattice (not a bulk shear wave) | Travels with no loss |
 
 The solids are spring lattices, so their waves emerge from the springs. The
 fluids are tracer particles that follow a prescribed wave field. A line across
@@ -47,6 +48,30 @@ The superfluid is the absolute-zero limit: zero viscosity, no thermal motion.
 Like the supersolid it is frictionless, but it cannot carry shear at all, so it
 shows the other half of the aether puzzle: a medium planets could move through
 freely, but one that could not carry light.
+
+The **elastic superfluid (vortex lattice)** illustrates a candidate way round
+that. Three media are worth comparing for transverse waves:
+
+- **Homogeneous superfluid** (`SUPERFLUID`): no viscosity and no ordinary static
+  shear modulus, so no transverse wave at all.
+- **Vortex-bearing superfluid** (`VORTEX_SUPERFLUID`): the bulk is the same
+  inviscid fluid with no shear modulus, but it is threaded by an ordered array
+  of quantized vortices (the cyan markers). The vortex array has an emergent,
+  effective shear elasticity, and deforming it sideways gives a transverse
+  Tkachenko-like collective mode, which travels across the scene. The fluid
+  particles stay fluid; the transverse response comes from the sparse vortex
+  structure, not from the bulk.
+- **Supersolid** (`SUPERSOLID`): the bulk medium itself has crystalline rigidity,
+  so shear travels through the bulk spring lattice.
+
+The vortex mode uses the simplified compressible vortex-lattice dispersion
+`omega^2 = cT^2 cS^2 k^4 / (4 Omega^2 + cS^2 k^2)`, with the wave lab's canvas
+units (`cT = 3` px/frame, `cS = 7.5` px/frame, `Omega = 0.08` rad/frame). The
+vortex displacements follow this prescribed travelling mode rather than being
+evolved dynamically. It is an illustrative reduced model in simulation units,
+not a calibrated model of helium, a Bose-Einstein condensate, the physical
+vacuum or electromagnetic propagation, and seeing the mode here does not show
+that light is such a mode.
 
 You can switch the wave between **transverse** and **longitudinal**. Set the
 medium, wave type, viscosity and driving frequency from the on-screen panel or
@@ -80,7 +105,7 @@ arrow to collapse it.
 
 | Key            | Action                                            |
 |----------------|---------------------------------------------------|
-| `F5` – `F10`   | Medium: solid, viscous, liquid, gas, supersolid, superfluid |
+| `F5` – `F11`   | Medium: solid, viscous, liquid, gas, supersolid, superfluid, elastic superfluid (vortex lattice) |
 | `T`            | Toggle transverse / longitudinal wave             |
 | `+` / `=`      | Increase viscosity by 0.1 (range 0–1)             |
 | `-`            | Decrease viscosity by 0.1                         |
@@ -89,7 +114,7 @@ arrow to collapse it.
 | `M`            | Print the wave controls menu                      |
 | `Alt` + `W`    | Print the wave controls menu and current status   |
 
-Keypad `1`–`6` also pick the medium, and keypad `+`/`-` work too. The top-row
+Keypad `1`–`7` also pick the medium, and keypad `+`/`-` work too. The top-row
 digits `1`–`4` belong to Light Vulkan Graphics, which uses them to switch its
 render mode (normal, wireframe, unlit, spheres).
 
@@ -141,6 +166,15 @@ cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=g++
 cmake --build build
 ```
 
+The build also makes a small numerical check of the vortex-lattice dispersion
+(`tkachenko_dispersion_check`), which needs no graphics. Run it with:
+
+```bash
+cd build && ctest
+```
+
+Configure with `-DAETHER_BUILD_CHECKS=OFF` to skip it.
+
 ## Running
 
 ```bash
@@ -155,6 +189,7 @@ models.
 ```
 include/   Headers for the physics models and utilities
 src/       Implementation files
+tests/     Standalone numerical checks (run with ctest)
 CMakeLists.txt
 ```
 

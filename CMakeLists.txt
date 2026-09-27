@@ -47,3 +47,13 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
 	LightVulkanGraphics::LightVulkanGraphics
 	glfw
 )
+
+# Standalone numerical check of the vortex-lattice dispersion helper. It needs
+# no graphics; run with ctest.
+option(AETHER_BUILD_CHECKS "Build numerical checks (run with ctest)" ON)
+if (AETHER_BUILD_CHECKS)
+	enable_testing()
+	add_executable(tkachenko_dispersion_check tests/tkachenko_dispersion_check.cpp)
+	target_include_directories(tkachenko_dispersion_check PRIVATE include)
+	add_test(NAME tkachenko_dispersion_check COMMAND tkachenko_dispersion_check)
+endif()

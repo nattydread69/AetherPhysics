@@ -31,7 +31,7 @@ This applies to:
 - `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`). Also provides the "About this view" explanation panel: `createInfoPanel()` (fixed paragraphs), `setInfoDetail()` (the paragraph that follows the current view) and `destroyInfoPanel()`, which each model's `cleanup()` must call. Keep the panel text in step with what the simulation actually does.
 - `AetherPhysicsModel` - Base for aether-based models
 - `AetherDensityVisualizer` - Aether density field with a light ray (default model, `F1`). Two display modes toggled with `V`: volumetric fog (the default) or the orbiting particle lattice, coloured by angular speed (blue slowest, orange fastest). The fog shows the density excess using the library's volume renderer (`createTexture3D`/`createVolume`), with an RGBA8 texture and `VolumeColorSource::TextureRgba`: RGB is the orbital-speed colour, alpha is the density excess. The fog volume is not a scene object, so `cleanup()` must destroy it; `clearObjects()` does not.
-- `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid/superfluid) with an on-screen control panel (`F2`). `MediumMode` values match the dropdown order, so add new media at the end. The superfluid is a fluid medium with `FluidParams::normalFraction` 0 (no viscous drag, so no transverse field), no jitter or drag, and no sound attenuation. The simulation runs in canvas units (pixels on a 900x500 canvas with y down, time in animation frames at 60 per second), and only `toWorld()` and `update()` convert to world units and seconds. Keep new physics in those units. Lines and curves are thin boxes placed with `placeSegment()`.
+- `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid/superfluid/elastic superfluid) with an on-screen control panel (`F2`). `MediumMode` values match the dropdown order, so add new media at the end. The superfluid is a fluid medium with `FluidParams::normalFraction` 0 (no viscous drag, so no transverse field), no jitter or drag, and no sound attenuation. `VORTEX_SUPERFLUID` is the same inviscid fluid (still `normalFraction` 0; never fake it with viscosity) plus a sparse vortex lattice (`VortexLattice`) whose effective elasticity carries a transverse Tkachenko-like mode, set by `FluidParams::vortexElasticFraction` and the dispersion in `include/TkachenkoDispersion.h`. The transverse field is the sum of a viscous term and a vortex-elastic term, and the bottom-left envelopes draw them separately (white and cyan). `stepVortexLattice()` currently prescribes the analytic mode; a dynamic vortex model would replace just that function. Keep the physics wording careful: a homogeneous superfluid has no static shear modulus; only the vortex array has effective elasticity. The simulation runs in canvas units (pixels on a 900x500 canvas with y down, time in animation frames at 60 per second), and only `toWorld()` and `update()` convert to world units and seconds. Keep new physics in those units. Lines and curves are thin boxes placed with `placeSegment()`.
 - `GPUCapabilities` - VRAM detection and lattice resolution selection
 
 ## Keyboard Input
@@ -44,6 +44,7 @@ This applies to:
 ```bash
 cmake -B build
 cmake --build build
+(cd build && ctest)          # numerical checks, no graphics needed
 ./build/AetherPhysics
 ```
 
