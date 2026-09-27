@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 //
-// Light Vulkan Graphics
+// AetherPhysics
 // Copyright (C) 2025 Dr. Nathanael John Inkson
 //
 // This program is free software: you can redistribute it and/or modify

@@ -1,0 +1,63 @@
+# Build directories
+/build/
+/build-*/
+/out/
+/cmake-build-*/
+
+# CMake generated files (in-source builds)
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+Testing/
+_deps/
+compile_commands.json
+CMakeUserPresets.json
+
+# Build system files
+Makefile
+*.ninja
+.ninja_deps
+.ninja_log
+
+# Compiled objects and libraries
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exp
+*.ilk
+*.pdb
+
+# Executables
+*.exe
+*.out
+*.app
+/AetherPhysics
+
+# Compiled shaders
+*.spv
+
+# Precompiled headers
+*.gch
+*.pch
+
+# Editors and IDEs
+.vscode/
+.idea/
+.vs/
+*.swp
+*.swo
+*~
+.cache/
+.clangd/
+
+# OS files
+.DS_Store
+Thumbs.db

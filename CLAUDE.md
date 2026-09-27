@@ -21,12 +21,23 @@ This applies to:
 - `/src/` - Implementation files
 - `/build/` - Build artifacts (excluded from git via .gitignore)
 
-## Physics Models
-- `PhysicsModel` - Base abstract class for all physics simulations
+## Dependencies
+- Light Vulkan Graphics (`find_package(LightVulkanGraphics CONFIG REQUIRED)`), which provides the renderer, `GraphicsModel` and the `lightGraphics::ui` widgets
+- GLFW 3 and GLM
+- C++20, CMake 3.16+
+
+## Application and Physics Models
+- `PhysicsApp` - Owns the window, polls the keyboard each frame and switches models
+- `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`)
 - `AetherPhysicsModel` - Base for aether-based models
-- `AetherDensityVisualizer` - 3D lattice of blue aether particles
-- `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid)
-- `DemoModel` - Basic demonstration with simple shapes
+- `AetherDensityVisualizer` - 3D lattice of blue aether particles with density rays (default model, `F1`)
+- `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid) with an on-screen control panel (`F2`)
+- `GPUCapabilities` - VRAM detection and lattice resolution selection
+
+## Keyboard Input
+- All key handling starts in `PhysicsApp::handleKeyboardInput()`. It updates `keysPressed`/`keysJustPressed`/`keysJustReleased` for every key at the start of each frame. Use the `keysJustPressed` edge flags for one-shot actions.
+- Global keys: `F1`/`F2` switch models, `F3` prints the menu, `Esc` quits.
+- Model-specific keys only apply while that model is active. `WavePhysicsModel::handleKeyPress()` owns the wave bindings. Keep it, `WavePhysicsModel::printModeMenu()` and the Controls section of `README.md` in sync.
 
 ## Build and Test
 ```bash
@@ -43,22 +54,7 @@ The application automatically detects GPU VRAM and scales particle count:
 - HIGH: 4-8GB → 25³ particles
 - ULTRA: 8GB+ → 33³ particles
 
----
+GPUs with more than 8 GB get up to 37³ particles, and more than 16 GB up to 41³.
 
-# Development Guidelines
-
-## Git Workflow
-**IMPORTANT: Do not commit code automatically.** The user will handle all git commits manually. 
-
-After making code changes:
-1. Build and test the code
-2. Report what was changed and whether it works
-3. Wait for the user to review and commit
-4. Only commit if explicitly asked by the user
-
-This applies to:
-- Bug fixes
-- New features
-- Refactoring
-- Build configuration changes
-- Any other code modifications
+## License Headers
+Every source file (`.h`, `.cpp`, `CMakeLists.txt`) starts with the full `LGPL-3.0-or-later` notice naming "AetherPhysics". Copy it from an existing file when adding new ones.

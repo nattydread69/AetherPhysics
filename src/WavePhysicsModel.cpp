@@ -1,4 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// AetherPhysics
+// Copyright (C) 2025 Dr. Nathanael John Inkson
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "WavePhysicsModel.h"
 #include <iostream>
@@ -18,6 +34,8 @@
 #include "lightVulkanGraphics/ui/widgets/TextBox.h"
 #include "lightVulkanGraphics/ui/widgets/Label.h"
 #include "lightVulkanGraphics/ui/widgets/Separator.h"
+
+#include <GLFW/glfw3.h>
 
 WavePhysicsModel::WavePhysicsModel(lightGraphics::lightVulkanGraphics& app)
 	: PhysicsModel(app, "Wave Physics Model")
@@ -231,24 +249,63 @@ void WavePhysicsModel::updateUIValues()
 	}
 }
 
+bool WavePhysicsModel::handleKeyPress(int key)
+{
+	constexpr float VISCOSITY_STEP = 0.1f;
+	constexpr float FREQUENCY_STEP = 0.01f;
+
+	switch (key) {
+		case GLFW_KEY_1: case GLFW_KEY_KP_1: setMediumMode(MediumMode::SOLID); break;
+		case GLFW_KEY_2: case GLFW_KEY_KP_2: setMediumMode(MediumMode::VISCOUS); break;
+		case GLFW_KEY_3: case GLFW_KEY_KP_3: setMediumMode(MediumMode::LIQUID); break;
+		case GLFW_KEY_4: case GLFW_KEY_KP_4: setMediumMode(MediumMode::GAS); break;
+		case GLFW_KEY_5: case GLFW_KEY_KP_5: setMediumMode(MediumMode::SUPERSOLID); break;
+		case GLFW_KEY_T:
+			setWaveType(waveType == WaveType::TRANSVERSE ? WaveType::LONGITUDINAL : WaveType::TRANSVERSE);
+			break;
+		case GLFW_KEY_EQUAL: case GLFW_KEY_KP_ADD:
+			setViscosity(viscosity + VISCOSITY_STEP);
+			break;
+		case GLFW_KEY_MINUS: case GLFW_KEY_KP_SUBTRACT:
+			setViscosity(viscosity - VISCOSITY_STEP);
+			break;
+		case GLFW_KEY_PERIOD:
+			setFrequency(frequency + FREQUENCY_STEP);
+			break;
+		case GLFW_KEY_COMMA:
+			setFrequency(frequency - FREQUENCY_STEP);
+			break;
+		case GLFW_KEY_M:
+			printModeMenu();
+			return true;
+		default:
+			return false;
+	}
+
+	updateUIValues();
+	printStatus();
+	return true;
+}
+
 void WavePhysicsModel::printModeMenu() const
 {
 	std::cout << "\n╔════════════════════════════════════════╗\n"
 		<< "║       WAVE PHYSICS MODEL - MODES       ║\n"
 		<< "╠════════════════════════════════════════╣\n"
-		<< "║  1: SOLID         - Elastic lattice   ║\n"
-		<< "║  2: VISCOUS       - Tunable viscosity ║\n"
-		<< "║  3: LIQUID        - Incompressible    ║\n"
-		<< "║  4: GAS           - Low density fluid ║\n"
-		<< "║  5: SUPERSOLID    - Lossless demo    ║\n"
+		<< "║  1: SOLID         - Elastic lattice    ║\n"
+		<< "║  2: VISCOUS       - Tunable viscosity  ║\n"
+		<< "║  3: LIQUID        - Incompressible     ║\n"
+		<< "║  4: GAS           - Low density fluid  ║\n"
+		<< "║  5: SUPERSOLID    - Lossless demo      ║\n"
 		<< "║                                        ║\n"
-		<< "║  T: Toggle Wave Type (Transverse/Long)║\n"
-		<< "║  +/=: Increase Viscosity               ║\n"
-		<< "║  -/_: Decrease Viscosity               ║\n"
-		<< "║  >/.: Increase Frequency               ║\n"
-		<< "║  <,/: Decrease Frequency               ║\n"
+		<< "║  T:   Toggle wave type (Trans/Long)    ║\n"
+		<< "║  +/=: Increase viscosity               ║\n"
+		<< "║  -:   Decrease viscosity               ║\n"
+		<< "║  >/.: Increase frequency               ║\n"
+		<< "║  </,: Decrease frequency               ║\n"
 		<< "║  M:   Show this menu                   ║\n"
-		<< "║  Esc: Back to main menu                ║\n"
+		<< "║  F1:  Back to density visualizer       ║\n"
+		<< "║  Esc: Exit                             ║\n"
 		<< "╚════════════════════════════════════════╝\n";
 }
 

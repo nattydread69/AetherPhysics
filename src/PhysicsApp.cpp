@@ -1,4 +1,20 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
+//
+// AetherPhysics
+// Copyright (C) 2025 Dr. Nathanael John Inkson
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published
+// by the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #include "PhysicsApp.h"
 
@@ -135,59 +151,80 @@ void PhysicsApp::handleKeyboardInput()
 		return;
 	}
 
+	// Update key state first so the edge flags are valid for everything below.
+	// GLFW_KEY_SPACE is the lowest valid key code.
+	for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
+	{
+		const bool pressed = glfwGetKey(window, key) == GLFW_PRESS;
+		keysJustPressed[key] = pressed && !keysPressed[key];
+		keysJustReleased[key] = !pressed && keysPressed[key];
+		keysPressed[key] = pressed;
+	}
+
+	const bool altHeld = keysPressed[GLFW_KEY_LEFT_ALT] || keysPressed[GLFW_KEY_RIGHT_ALT];
+
+	if (keysJustPressed[GLFW_KEY_ESCAPE])
+	{
+		glfwSetWindowShouldClose(window, GLFW_TRUE);
+		return;
+	}
+
+	if (keysJustPressed[GLFW_KEY_F1])
+	{
+		switchModel(ModelType::AETHER_DENSITY_VISUALIZER);
+		return;
+	}
+	if (keysJustPressed[GLFW_KEY_F2])
+	{
+		switchModel(ModelType::WAVE_PHYSICS);
+		return;
+	}
+	if (keysJustPressed[GLFW_KEY_F3])
+	{
+		showModelMenu();
+	}
+
+	if (!currentPhysicsModel)
+	{
+		return;
+	}
 
 	// Ray length controls (only for Aether Density Visualizer)
-	if (currentModel == ModelType::AETHER_DENSITY_VISUALIZER && currentPhysicsModel)
+	if (currentModel == ModelType::AETHER_DENSITY_VISUALIZER)
 	{
-		// Cast to AetherDensityVisualizer to access ray controls
 		AetherDensityVisualizer* densityViz = dynamic_cast<AetherDensityVisualizer*>(currentPhysicsModel.get());
 		if (densityViz)
 		{
-			// Increase ray length with + key
 			if (keysJustPressed[GLFW_KEY_EQUAL] || keysJustPressed[GLFW_KEY_KP_ADD])
 			{
-				int currentLength = densityViz->maxRaySegments;
-				densityViz->setRayLength(currentLength + 10);
+				densityViz->setRayLength(densityViz->maxRaySegments + 10);
 			}
-			// Decrease ray length with - key
 			if (keysJustPressed[GLFW_KEY_MINUS] || keysJustPressed[GLFW_KEY_KP_SUBTRACT])
 			{
-				int currentLength = densityViz->maxRaySegments;
-				densityViz->setRayLength(currentLength - 10);
+				densityViz->setRayLength(densityViz->maxRaySegments - 10);
 			}
 		}
 	}
 
-	// Wave Physics mode controls - access menu with Alt+W
-	if (keysJustPressed[GLFW_KEY_W] && (glfwGetKey(window, GLFW_KEY_LEFT_ALT) || glfwGetKey(window, GLFW_KEY_RIGHT_ALT)))
+	// Wave Physics controls
+	if (currentModel == ModelType::WAVE_PHYSICS)
 	{
-		if (currentModel == ModelType::WAVE_PHYSICS && currentPhysicsModel)
+		WavePhysicsModel* waveMdl = dynamic_cast<WavePhysicsModel*>(currentPhysicsModel.get());
+		if (waveMdl)
 		{
-			showWavePhysicsMenu();
-		}
-	}
-
-	for (int key = 0; key <= GLFW_KEY_LAST; ++key)
-	{
-		const bool pressed = glfwGetKey(window, key) == GLFW_PRESS;
-		const bool justPressed = pressed && !keysPressed[key];
-		keysPressed[key] = pressed;
-
-		if (justPressed && key == GLFW_KEY_F1)
-		{
-			switchModel(ModelType::AETHER_DENSITY_VISUALIZER);
-		}
-		else if (justPressed && key == GLFW_KEY_F2)
-		{
-			switchModel(ModelType::WAVE_PHYSICS);
-		}
-		else if (justPressed && key == GLFW_KEY_F3)
-		{
-			showModelMenu();
-		}
-		else if (justPressed && key == GLFW_KEY_ESCAPE)
-		{
-			glfwSetWindowShouldClose(window, GLFW_TRUE);
+			if (altHeld && keysJustPressed[GLFW_KEY_W])
+			{
+				showWavePhysicsMenu();
+				return;
+			}
+			for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
+			{
+				if (keysJustPressed[key] && waveMdl->handleKeyPress(key))
+				{
+					// One action per frame: a medium change rebuilds the model and its UI.
+					break;
+				}
+			}
 		}
 	}
 }
