@@ -19,9 +19,9 @@
 #include "PhysicsApp.h"
 
 #include "AetherDensityVisualizer.h"
-#include "AetherPhysicsModel.h"
 #include "WavePhysicsModel.h"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
@@ -47,10 +47,7 @@ PhysicsApp::PhysicsApp(int argc, char* argv[])
 	}
 
 	createModel(currentModel);
-	app.setCameraLookAt(
-		glm::vec3(4.0f, 2.0f, -8.0f),
-		glm::vec3(0.0f),
-		glm::vec3(0.0f, 1.0f, 0.0f));
+	resetCamera(currentModel);
 	app.finalizeScene();
 	showModelMenu();
 
@@ -59,8 +56,9 @@ PhysicsApp::PhysicsApp(int argc, char* argv[])
 
 		static auto lastTime = std::chrono::high_resolution_clock::now();
 		const auto currentTime = std::chrono::high_resolution_clock::now();
-		const float deltaTime =
-			std::chrono::duration<float>(currentTime - lastTime).count();
+		// Clamp so a slow frame (such as a model switch) can't destabilize the physics
+		const float deltaTime = std::min(
+			std::chrono::duration<float>(currentTime - lastTime).count(), MAX_FRAME_TIME);
 		lastTime = currentTime;
 
 		if (currentPhysicsModel)
@@ -84,9 +82,6 @@ void PhysicsApp::createModel(ModelType model)
 {
 	switch (model)
 	{
-	//case ModelType::Aether:
-	//	currentPhysicsModel = std::make_unique<AetherPhysicsModel>(app, "Aether Physics");
-	//	break;
 	case ModelType::AETHER_DENSITY_VISUALIZER:
 		std::cout << "Loading Aether Density Visualizer model..." << std::endl;
 		currentPhysicsModel = std::make_unique<AetherDensityVisualizer>(app);
@@ -107,39 +102,43 @@ void PhysicsApp::switchModel(ModelType model)
 		return;
 	}
 
-	std::cout << "[PhysicsApp] Switching model..." << std::endl;
-
-	std::cout << "[PhysicsApp] Calling cleanup()..." << std::endl;
 	currentPhysicsModel->cleanup();
-	std::cout << "[PhysicsApp] Cleanup complete" << std::endl;
-
-	std::cout << "[PhysicsApp] Resetting model pointer..." << std::endl;
 	currentPhysicsModel.reset();
-	std::cout << "[PhysicsApp] Calling clearObjects()..." << std::endl;
 	app.clearObjects();
-	std::cout << "[PhysicsApp] clearObjects() complete" << std::endl;
 
 	currentModel = model;
-
-	std::cout << "[PhysicsApp] Creating new model..." << std::endl;
 	createModel(model);
-	std::cout << "[PhysicsApp] Model creation complete" << std::endl;
+	resetCamera(model);
 
-	// Don't call finalizeScene() during mode switch - it's only for initial setup
-	// The scene is already finalized; we're just updating objects within it
+	// Don't call finalizeScene() during mode switch - it's only for initial setup.
+	// The scene is already finalized; we're just updating objects within it.
 
-	// Show mode-specific menu on switch and create UI
 	if (model == ModelType::WAVE_PHYSICS) {
 		WavePhysicsModel* waveMdl = dynamic_cast<WavePhysicsModel*>(currentPhysicsModel.get());
 		if (waveMdl) {
-			// Position camera perpendicular to view the wave plane straight-on
-			app.setCameraLookAt(
-				glm::vec3(0.0f, 0.0f, 20.0f),
-				glm::vec3(0.0f, 0.0f, 0.0f),
-				glm::vec3(0.0f, 1.0f, 0.0f));
 			waveMdl->createUIPanel();
 			showWavePhysicsMenu();
 		}
+	}
+}
+
+void PhysicsApp::resetCamera(ModelType model)
+{
+	switch (model)
+	{
+	case ModelType::AETHER_DENSITY_VISUALIZER:
+		app.setCameraLookAt(
+			glm::vec3(4.0f, 2.0f, -8.0f),
+			glm::vec3(0.0f),
+			glm::vec3(0.0f, 1.0f, 0.0f));
+		break;
+	case ModelType::WAVE_PHYSICS:
+		// Look straight at the wave plane
+		app.setCameraLookAt(
+			glm::vec3(0.0f, 0.0f, 20.0f),
+			glm::vec3(0.0f),
+			glm::vec3(0.0f, 1.0f, 0.0f));
+		break;
 	}
 }
 
@@ -152,10 +151,12 @@ void PhysicsApp::handleKeyboardInput()
 	}
 
 	// Update key state first so the edge flags are valid for everything below.
-	// GLFW_KEY_SPACE is the lowest valid key code.
+	// GLFW_KEY_SPACE is the lowest valid key code. pollKey() reports keys as
+	// released while the GUI owns the keyboard (e.g. typing in a text field), so
+	// shortcuts don't fire mid-typing.
 	for (int key = GLFW_KEY_SPACE; key <= GLFW_KEY_LAST; ++key)
 	{
-		const bool pressed = glfwGetKey(window, key) == GLFW_PRESS;
+		const bool pressed = app.pollKey(key) == GLFW_PRESS;
 		keysJustPressed[key] = pressed && !keysPressed[key];
 		keysJustReleased[key] = !pressed && keysPressed[key];
 		keysPressed[key] = pressed;

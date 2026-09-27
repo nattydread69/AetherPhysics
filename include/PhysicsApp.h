@@ -31,19 +31,21 @@ public:
 
 private:
 	enum class ModelType {
-		Aether,
 		AETHER_DENSITY_VISUALIZER,
 		WAVE_PHYSICS,
 	};
 
 	void createModel(ModelType model);
 	void switchModel(ModelType model);
+	void resetCamera(ModelType model);
 	void handleKeyboardInput();
 	static bool keysPressed[GLFW_KEY_LAST + 1];
 	static bool keysJustPressed[GLFW_KEY_LAST + 1];
 	static bool keysJustReleased[GLFW_KEY_LAST + 1];
 	void showModelMenu() const;
 	void showWavePhysicsMenu() const;
+
+	static constexpr float MAX_FRAME_TIME = 0.1f; // Seconds
 
 	lightGraphics::lightVulkanGraphics app;
 	std::unique_ptr<PhysicsModel> currentPhysicsModel;

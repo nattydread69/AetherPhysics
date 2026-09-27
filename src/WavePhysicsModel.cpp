@@ -18,11 +18,9 @@
 
 #include "WavePhysicsModel.h"
 #include <iostream>
-#include <iomanip>
 #include <cmath>
 #include <algorithm>
 #include <random>
-#include <chrono>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -58,42 +56,18 @@ void WavePhysicsModel::initialize()
 
 void WavePhysicsModel::cleanup()
 {
-	std::cout << "[WavePhysicsModel::cleanup] Starting cleanup" << std::endl;
-	std::cout << "[WavePhysicsModel::cleanup] Calling destroyUIPanel()..." << std::endl;
 	destroyUIPanel();
-	std::cout << "[WavePhysicsModel::cleanup] destroyUIPanel() complete" << std::endl;
+	solid.reset();
+	fluid.reset();
 
-	// Clear the stored indices
-	if (solid) {
-		std::cout << "[WavePhysicsModel::cleanup] Clearing solid objectIndices and resetting..." << std::endl;
-		solid->objectIndices.clear();
-		solid.reset();
-		std::cout << "[WavePhysicsModel::cleanup] Solid reset complete" << std::endl;
-	}
-	if (fluid) {
-		std::cout << "[WavePhysicsModel::cleanup] Clearing fluid objectIndices and resetting..." << std::endl;
-		fluid->objectIndices.clear();
-		fluid.reset();
-		std::cout << "[WavePhysicsModel::cleanup] Fluid reset complete" << std::endl;
-	}
-
-	// Remove all physics objects from graphics system
-	std::cout << "[WavePhysicsModel::cleanup] Removing objects from graphics system..." << std::endl;
+	// Remove all physics objects from the graphics system
 	app_.clearObjects();
-	std::cout << "[WavePhysicsModel::cleanup] Graphics objects cleared" << std::endl;
-
-	std::cout << "[WavePhysicsModel::cleanup] Cleanup finished" << std::endl;
 }
 
 void WavePhysicsModel::setMediumMode(MediumMode mode)
 {
-	std::cout << "[WavePhysicsModel] setMediumMode() - Safe transaction pattern" << std::endl;
-
-	// Clear all existing objects in one atomic operation
-	std::cout << "[WavePhysicsModel] Clearing old objects..." << std::endl;
-	cleanup();  // Clears UI and resets object lists
-
-	std::cout << "[WavePhysicsModel] Creating new objects for mode..." << std::endl;
+	// Clear the old objects and UI, then rebuild both for the new medium
+	cleanup();
 	mediumMode = mode;
 
 	if (mode == MediumMode::SOLID || mode == MediumMode::SUPERSOLID) {
@@ -103,28 +77,13 @@ void WavePhysicsModel::setMediumMode(MediumMode mode)
 	}
 
 	time = 0.0f;
-
-	// Recreate UI panel after physics objects
-	std::cout << "[WavePhysicsModel] Recreating UI panel..." << std::endl;
 	createUIPanel();
-
-	std::cout << "[WavePhysicsModel] setMediumMode() complete" << std::endl;
-	std::cout << "Switched to mode: ";
-	switch (mode) {
-		case MediumMode::SOLID: std::cout << "SOLID"; break;
-		case MediumMode::VISCOUS: std::cout << "VISCOUS"; break;
-		case MediumMode::LIQUID: std::cout << "LIQUID"; break;
-		case MediumMode::GAS: std::cout << "GAS"; break;
-		case MediumMode::SUPERSOLID: std::cout << "SUPERSOLID"; break;
-	}
-	std::cout << std::endl;
 }
 
 void WavePhysicsModel::setWaveType(WaveType type)
 {
 	waveType = type;
 	time = 0.0f;
-	std::cout << "Wave type: " << (type == WaveType::TRANSVERSE ? "TRANSVERSE" : "LONGITUDINAL") << std::endl;
 }
 
 void WavePhysicsModel::setViscosity(float value)
@@ -139,29 +98,25 @@ void WavePhysicsModel::setFrequency(float value)
 
 void WavePhysicsModel::createUIPanel()
 {
-	std::cout << "[WavePhysicsModel::createUIPanel] Starting UI panel creation" << std::endl;
 
 	if (uiPanel) {
-		std::cout << "[WavePhysicsModel::createUIPanel] Destroying existing panel" << std::endl;
 		destroyUIPanel();
 	}
 
-	std::cout << "[WavePhysicsModel::createUIPanel] Getting GUI context" << std::endl;
 	auto& guiContext = app_.gui();
-	std::cout << "[WavePhysicsModel::createUIPanel] Creating panel" << std::endl;
 	uiPanel = guiContext.createPanel("Wave Physics Control", {10, 10, 300, 500}, lightGraphics::ui::PanelFlags::None);
-	std::cout << "[WavePhysicsModel::createUIPanel] Panel created successfully" << std::endl;
 
 	// Mode selection dropdown
 	uiPanel->add<lightGraphics::ui::Label>("Medium Mode");
 	modeDropdown = uiPanel->add<lightGraphics::ui::DropDown>(
-		"##mode",
+		"",
 		std::vector<std::string>{"Solid", "Viscous", "Liquid", "Gas", "Supersolid"},
 		static_cast<int>(mediumMode)
 	);
 	modeDropdown->setOnChange([this](int index) {
-		setMediumMode(static_cast<MediumMode>(index));
-		printStatus();
+		// Changing medium destroys this panel, which must not happen inside one of
+		// its own widget callbacks, so apply it at the start of the next update()
+		pendingMediumMode = static_cast<MediumMode>(index);
 	});
 
 	uiPanel->add<lightGraphics::ui::Separator>();
@@ -193,7 +148,7 @@ void WavePhysicsModel::createUIPanel()
 	// Viscosity slider
 	uiPanel->add<lightGraphics::ui::Label>("Viscosity");
 	viscositySlider = uiPanel->add<lightGraphics::ui::Slider>(
-		"##viscosity",
+		"",
 		0.0f, 1.0f, viscosity
 	);
 	viscositySlider->setOnChange([this](float value) {
@@ -203,14 +158,13 @@ void WavePhysicsModel::createUIPanel()
 	// Frequency slider
 	uiPanel->add<lightGraphics::ui::Label>("Frequency");
 	frequencySlider = uiPanel->add<lightGraphics::ui::Slider>(
-		"##frequency",
+		"",
 		0.05f, 0.3f, frequency
 	);
 	frequencySlider->setOnChange([this](float value) {
 		setFrequency(value);
 	});
 
-	std::cout << "Wave Physics UI panel created" << std::endl;
 }
 
 void WavePhysicsModel::destroyUIPanel()
@@ -346,8 +300,6 @@ void WavePhysicsModel::buildSolid()
 	solid->nodes.reserve(Nx * Ny);
 	solid->objectIndices.reserve(Nx * Ny);
 
-	std::cout << "Building solid lattice: " << Nx << "x" << Ny << " = " << (Nx*Ny) << " nodes" << std::endl;
-
 	std::random_device rd;
 	std::mt19937 gen(rd());
 	std::uniform_real_distribution<float> colorVar(-0.1f, 0.1f);
@@ -416,9 +368,6 @@ void WavePhysicsModel::buildSolid()
 		}
 	}
 
-	std::cout << "Solid created: " << solid->nodes.size() << " nodes, "
-		<< solid->objectIndices.size() << " object indices, "
-		<< solid->springs.size() << " springs" << std::endl;
 }
 
 void WavePhysicsModel::buildFluid()
@@ -430,12 +379,11 @@ void WavePhysicsModel::buildFluid()
 	if (mediumMode == MediumMode::GAS) count = 600;
 
 	const float minX = SOURCE_X / 450.0f * SCENE_WIDTH - SCENE_WIDTH * 0.5f + 0.5f;
+	const float maxX = SCENE_WIDTH * 0.5f - 0.5f;
 	fluid->particles.reserve(count);
 	fluid->objectIndices.reserve(count);
 	fluid->minDist = (mediumMode == MediumMode::GAS) ? 0.12f : 0.14f;
 	fluid->repelK = (mediumMode == MediumMode::GAS) ? 0.55f : 0.70f;
-
-	std::cout << "Building fluid with " << count << " particles" << std::endl;
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -445,7 +393,7 @@ void WavePhysicsModel::buildFluid()
 	for (int i = 0; i < count; ++i) {
 		Particle p;
 		p.pos = glm::vec3(
-			minX + (SCENE_WIDTH - minX) * (i % 100) / 100.0f,
+			minX + (maxX - minX) * (i % 100) / 100.0f,
 			posDist(gen),
 			0.0f
 		);
@@ -466,27 +414,24 @@ void WavePhysicsModel::buildFluid()
 		fluid->objectIndices.push_back(app_.getObjectCount() - 1);
 	}
 
-	std::cout << "Fluid created: " << fluid->particles.size() << " particles, "
-		<< fluid->objectIndices.size() << " object indices" << std::endl;
 }
 
 void WavePhysicsModel::update(float deltaTime)
 {
-	static int frameCount = 0;
-	static auto lastPrintTime = std::chrono::high_resolution_clock::now();
-	auto frameStartTime = std::chrono::high_resolution_clock::now();
+	if (pendingMediumMode) {
+		const MediumMode mode = *pendingMediumMode;
+		pendingMediumMode.reset();
+		setMediumMode(mode);
+		printStatus();
+	}
 
 	time += deltaTime;
 	const float dt = deltaTime / SUB_STEPS;
 
-	auto physicsStartTime = std::chrono::high_resolution_clock::now();
 	for (int s = 0; s < SUB_STEPS; ++s) {
 		stepPhysics(dt);
 	}
-	auto physicsEndTime = std::chrono::high_resolution_clock::now();
-	float physicsMs = std::chrono::duration<float, std::milli>(physicsEndTime - physicsStartTime).count();
 
-	auto updateStartTime = std::chrono::high_resolution_clock::now();
 	try {
 		if (solid && !solid->objectIndices.empty() && solid->objectIndices.size() == solid->nodes.size()) {
 			for (size_t i = 0; i < solid->nodes.size(); ++i) {
@@ -529,23 +474,6 @@ void WavePhysicsModel::update(float deltaTime)
 		std::cerr << "Exception in update: " << e.what() << std::endl;
 	} catch (...) {
 		std::cerr << "Unknown exception in update" << std::endl;
-	}
-	auto updateEndTime = std::chrono::high_resolution_clock::now();
-	float updateMs = std::chrono::duration<float, std::milli>(updateEndTime - updateStartTime).count();
-
-	auto frameEndTime = std::chrono::high_resolution_clock::now();
-	float frameMs = std::chrono::duration<float, std::milli>(frameEndTime - frameStartTime).count();
-
-	frameCount++;
-	auto now = std::chrono::high_resolution_clock::now();
-	if (std::chrono::duration<float>(now - lastPrintTime).count() >= 1.0f) {
-		float fps = frameCount / std::chrono::duration<float>(now - lastPrintTime).count();
-		std::cout << "[PERF] FPS: " << std::fixed << std::setprecision(1) << fps
-			<< " | Frame: " << std::setprecision(2) << frameMs << "ms"
-			<< " | Physics: " << physicsMs << "ms"
-			<< " | Update: " << updateMs << "ms" << std::endl;
-		frameCount = 0;
-		lastPrintTime = now;
 	}
 }
 
@@ -669,8 +597,6 @@ void WavePhysicsModel::stepFluid(float dt)
 	static std::uniform_real_distribution<float> jitterDist(-0.5f, 0.5f);
 
 	const float omega = frequency;
-	const float disp = AMP * std::sin(time * omega) / 450.0f * SCENE_WIDTH;
-	const float vel = AMP * omega * std::cos(time * omega) / 450.0f * SCENE_WIDTH;
 	const float sourceX = SOURCE_X / 450.0f * SCENE_WIDTH - SCENE_WIDTH * 0.5f;
 
 	const FluidParams params = getFluidParams();
@@ -711,7 +637,12 @@ void WavePhysicsModel::stepFluid(float dt)
 	const float cellSize = minD * 2.0f;
 	const int gridWidth = (int)std::ceil(SCENE_WIDTH / cellSize) + 1;
 	const int gridHeight = (int)std::ceil(SCENE_HEIGHT / cellSize) + 1;
-	std::vector<std::vector<size_t>> grid(gridWidth * gridHeight);
+	// Reuse the grid between steps; clear() keeps each cell's capacity
+	auto& grid = fluid->grid;
+	grid.resize(gridWidth * gridHeight);
+	for (auto& cell : grid) {
+		cell.clear();
+	}
 
 	// Populate grid
 	for (size_t i = 0; i < fluid->particles.size(); ++i) {
