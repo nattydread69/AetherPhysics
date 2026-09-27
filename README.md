@@ -15,10 +15,14 @@ through the lattice show how the density field bends paths. The model is based o
 
 The density can be shown two ways (toggle with `V`):
 
-- **Particles** (default): the orbiting lattice of blue particles. The lattice
+- **Fog** (default): volumetric fog whose thickness follows the density above
+  the background level, so it is densest at the centre and fades out with
+  distance. It is coloured by orbital speed with the same colours as the
+  particles.
+- **Particles**: the orbiting particle lattice, coloured by how fast each
+  particle goes round the vertical axis: blue for the slowest (outer corners),
+  through cyan, to orange for the fastest (next to the axis). The lattice
   size depends on the detected GPU (see [GPU scaling](#gpu-scaling)).
-- **Fog**: volumetric fog whose thickness follows the density above the
-  background level, so it is densest at the centre and fades out with distance.
 
 ### Wave Physics (`F2`)
 

@@ -21,6 +21,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <iostream>
 #include <vector>
 
@@ -50,6 +51,9 @@ void AetherDensityVisualizer::initialize()
 	launchNewRay();
 	createRaySegments();
 
+	// Show whichever display mode is the default (fog)
+	applyDisplayMode();
+
 	std::cout << "Created density field with " << sphereObjectIndices.size() << " spheres" << std::endl;
 }
 
@@ -73,8 +77,13 @@ void AetherDensityVisualizer::setDisplayMode(DisplayMode mode)
 {
 	if (mode == displayMode) return;
 	displayMode = mode;
+	applyDisplayMode();
+	std::cout << "Density display: " << (mode == DisplayMode::FOG ? "fog" : "particles") << std::endl;
+}
 
-	const bool fog = (mode == DisplayMode::FOG);
+void AetherDensityVisualizer::applyDisplayMode()
+{
+	const bool fog = (displayMode == DisplayMode::FOG);
 	setParticlesVisible(!fog);
 	if (fogVolume.isValid()) {
 		if (fog) {
@@ -83,8 +92,6 @@ void AetherDensityVisualizer::setDisplayMode(DisplayMode mode)
 			app_.hideVolume(fogVolume);
 		}
 	}
-
-	std::cout << "Density display: " << (fog ? "fog" : "particles") << std::endl;
 }
 
 void AetherDensityVisualizer::toggleDisplayMode()
@@ -94,21 +101,29 @@ void AetherDensityVisualizer::toggleDisplayMode()
 
 void AetherDensityVisualizer::setParticlesVisible(bool visible)
 {
-	const glm::vec4 color = visible ? particleColor : glm::vec4(0.0f);
-	for (int index : sphereObjectIndices) {
-		app_.setObjectColor(index, color);
+	for (size_t i = 0; i < sphereObjectIndices.size(); ++i) {
+		app_.setObjectColor(sphereObjectIndices[i], visible ? particleColors[i] : glm::vec4(0.0f));
 	}
 }
 
 void AetherDensityVisualizer::createFogVolume()
 {
+	// RGBA8 voxels: RGB is the orbital-speed colour (same palette as the
+	// particles), A is the density excess that sets how thick the fog is
 	const int n = fogResolution;
-	std::vector<float> field(static_cast<size_t>(n) * n * n);
+	std::vector<std::uint8_t> voxels(static_cast<size_t>(n) * n * n * 4);
 	for (int z = 0; z < n; ++z) {
 		for (int y = 0; y < n; ++y) {
 			for (int x = 0; x < n; ++x) {
 				const glm::vec3 pos = (glm::vec3(x, y, z) / static_cast<float>(n - 1) * 2.0f - 1.0f) * fogHalfRange;
-				field[x + n * (y + n * z)] = (densityField(pos) - rho0) / delta_rho;
+				const float excess = (densityField(pos) - rho0) / delta_rho;
+				const glm::vec3 color = glm::vec3(speedColor(calculateOrbitalSpeed(std::sqrt(pos.x * pos.x + pos.z * pos.z))));
+
+				std::uint8_t* voxel = &voxels[4 * (x + n * (y + n * z))];
+				voxel[0] = static_cast<std::uint8_t>(std::lround(color.r * 255.0f));
+				voxel[1] = static_cast<std::uint8_t>(std::lround(color.g * 255.0f));
+				voxel[2] = static_cast<std::uint8_t>(std::lround(color.b * 255.0f));
+				voxel[3] = static_cast<std::uint8_t>(std::lround(std::clamp(excess, 0.0f, 1.0f) * 255.0f));
 			}
 		}
 	}
@@ -117,14 +132,15 @@ void AetherDensityVisualizer::createFogVolume()
 	textureDescription.width = n;
 	textureDescription.height = n;
 	textureDescription.depth = n;
-	textureDescription.format = lightGraphics::TextureFormat::R32_SFLOAT;
-	fogTexture = app_.createTexture3D(textureDescription, field.data(), field.size() * sizeof(float));
+	textureDescription.format = lightGraphics::TextureFormat::RGBA8_UNORM;
+	fogTexture = app_.createTexture3D(textureDescription, voxels.data(), voxels.size());
 
-	// Transparent at background density, through aether blue, to pale blue at the peak
+	// With TextureRgba colour, the transfer function only shapes opacity:
+	// transparent at background density, opaque at the peak
 	fogTransferFunction = app_.createTransferFunction({
-		{0.0f, glm::vec4(0.1f, 0.3f, 0.8f, 0.0f)},
-		{0.5f, glm::vec4(0.2f, 0.5f, 0.95f, 0.5f)},
-		{1.0f, glm::vec4(0.7f, 0.9f, 1.0f, 1.0f)},
+		{0.0f, glm::vec4(1.0f, 1.0f, 1.0f, 0.0f)},
+		{0.5f, glm::vec4(1.0f, 1.0f, 1.0f, 0.5f)},
+		{1.0f, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)},
 	});
 
 	lightGraphics::VolumeRenderDescription volumeDescription;
@@ -133,11 +149,12 @@ void AetherDensityVisualizer::createFogVolume()
 	volumeDescription.volumeMin = glm::vec3(-fogHalfRange);
 	volumeDescription.volumeMax = glm::vec3(fogHalfRange);
 	volumeDescription.opacityModel = lightGraphics::VolumeOpacityModel::ExponentialExtinction;
+	volumeDescription.colorSource = lightGraphics::VolumeColorSource::TextureRgba;
 	volumeDescription.opacityScale = fogOpacity;
 	volumeDescription.raymarchSteps = 128;
 	volumeDescription.enableJitter = true;
 	fogVolume = app_.createVolume(volumeDescription);
-	// Created hidden; setDisplayMode(FOG) draws it
+	// Created hidden; applyDisplayMode() draws it in FOG mode
 }
 
 void AetherDensityVisualizer::destroyFogVolume()
@@ -168,6 +185,7 @@ void AetherDensityVisualizer::createLattice()
 	orbitalRadii.reserve(totalGridPoints);
 	orbitalAngles.reserve(totalGridPoints);
 	orbitalSpeeds.reserve(totalGridPoints);
+	particleColors.reserve(totalGridPoints);
 
 	const float sphereSize = sphereRadius * 0.2f;
 
@@ -188,12 +206,13 @@ void AetherDensityVisualizer::createLattice()
 				orbitalRadii.push_back(horizontalRadius);
 				orbitalAngles.push_back(std::atan2(zVal, xVal));
 				orbitalSpeeds.push_back(calculateOrbitalSpeed(horizontalRadius));
+				particleColors.push_back(speedColor(orbitalSpeeds.back()));
 
 				app_.addObject(
 					lightGraphics::ShapeType::CUBE,
 					position,
 					glm::vec3(sphereSize),
-					particleColor,
+					particleColors.back(),
 					glm::quat(1, 0, 0, 0),
 					"Aether Sphere " + std::to_string(sphereObjectIndices.size()),
 					1.0f // Mass
@@ -239,6 +258,19 @@ float AetherDensityVisualizer::calculateOrbitalSpeed(float horizontalRadius) con
 	const float maxRadius = halfRange * glm::root_two<float>();
 	const float normalizedDistance = std::min(horizontalRadius / maxRadius, 1.0f);
 	return baseAngularSpeed * (1.0f + speedVariation * (1.0f - normalizedDistance));
+}
+
+glm::vec4 AetherDensityVisualizer::speedColor(float angularSpeed) const
+{
+	// 0 at the slowest possible speed (lattice corner), 1 at the fastest (on the axis)
+	const float range = baseAngularSpeed * speedVariation;
+	const float t = range > 0.0f
+		? std::clamp((angularSpeed - baseAngularSpeed) / range, 0.0f, 1.0f)
+		: 0.0f;
+	const glm::vec3 rgb = (t < 0.5f)
+		? glm::mix(slowColor, midColor, t * 2.0f)
+		: glm::mix(midColor, fastColor, t * 2.0f - 1.0f);
+	return glm::vec4(rgb, particleAlpha);
 }
 
 float AetherDensityVisualizer::densityField(glm::vec3 const &pos) const

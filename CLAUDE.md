@@ -22,7 +22,7 @@ This applies to:
 - `/build/` - Build artifacts (excluded from git via .gitignore)
 
 ## Dependencies
-- Light Vulkan Graphics (`find_package(LightVulkanGraphics CONFIG REQUIRED)`), which provides the renderer, `GraphicsModel` and the `lightGraphics::ui` widgets
+- Light Vulkan Graphics (`find_package(LightVulkanGraphics CONFIG REQUIRED)`), which provides the renderer, `GraphicsModel` and the `lightGraphics::ui` widgets. The fog needs a library build with `VolumeColorSource` and the wait-for-GPU destroy fix.
 - GLFW 3 and GLM
 - C++20, CMake 3.16+
 
@@ -30,7 +30,7 @@ This applies to:
 - `PhysicsApp` - Owns the window, polls the keyboard each frame and switches models
 - `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`)
 - `AetherPhysicsModel` - Base for aether-based models
-- `AetherDensityVisualizer` - Aether density field with a light ray (default model, `F1`). Two display modes toggled with `V`: the orbiting particle lattice, or volumetric fog of the density excess using the library's volume renderer (`createTexture3D`/`createVolume`). The fog volume is not a scene object, so `cleanup()` must destroy it; `clearObjects()` does not.
+- `AetherDensityVisualizer` - Aether density field with a light ray (default model, `F1`). Two display modes toggled with `V`: volumetric fog (the default) or the orbiting particle lattice, coloured by angular speed (blue slowest, orange fastest). The fog shows the density excess using the library's volume renderer (`createTexture3D`/`createVolume`), with an RGBA8 texture and `VolumeColorSource::TextureRgba`: RGB is the orbital-speed colour, alpha is the density excess. The fog volume is not a scene object, so `cleanup()` must destroy it; `clearObjects()` does not.
 - `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid) with an on-screen control panel (`F2`)
 - `GPUCapabilities` - VRAM detection and lattice resolution selection
 
