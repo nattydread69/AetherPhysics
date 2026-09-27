@@ -71,6 +71,7 @@ public:
 	void createUIPanel();
 	void destroyUIPanel();
 	void updateUIValues();
+	void updateInfoText();
 	lightGraphics::ui::Panel* getUIPanel() { return uiPanel; }
 
 private:

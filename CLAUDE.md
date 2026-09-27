@@ -28,7 +28,7 @@ This applies to:
 
 ## Application and Physics Models
 - `PhysicsApp` - Owns the window, polls the keyboard each frame and switches models
-- `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`)
+- `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`). Also provides the "About this view" explanation panel: `createInfoPanel()` (fixed paragraphs), `setInfoDetail()` (the paragraph that follows the current view) and `destroyInfoPanel()`, which each model's `cleanup()` must call. Keep the panel text in step with what the simulation actually does.
 - `AetherPhysicsModel` - Base for aether-based models
 - `AetherDensityVisualizer` - Aether density field with a light ray (default model, `F1`). Two display modes toggled with `V`: volumetric fog (the default) or the orbiting particle lattice, coloured by angular speed (blue slowest, orange fastest). The fog shows the density excess using the library's volume renderer (`createTexture3D`/`createVolume`), with an RGBA8 texture and `VolumeColorSource::TextureRgba`: RGB is the orbital-speed colour, alpha is the density excess. The fog volume is not a scene object, so `cleanup()` must destroy it; `clearObjects()` does not.
 - `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid) with an on-screen control panel (`F2`)

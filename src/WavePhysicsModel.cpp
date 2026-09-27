@@ -84,6 +84,7 @@ void WavePhysicsModel::setWaveType(WaveType type)
 {
 	waveType = type;
 	time = 0.0f;
+	updateInfoText();
 }
 
 void WavePhysicsModel::setViscosity(float value)
@@ -104,7 +105,7 @@ void WavePhysicsModel::createUIPanel()
 	}
 
 	auto& guiContext = app_.gui();
-	uiPanel = guiContext.createPanel("Wave Physics Control", {10, 10, 300, 500}, lightGraphics::ui::PanelFlags::None);
+	uiPanel = guiContext.createPanel("Wave Physics Control", {10, 10, 300, 310}, lightGraphics::ui::PanelFlags::None);
 
 	// Mode selection dropdown
 	uiPanel->add<lightGraphics::ui::Label>("Medium Mode");
@@ -165,10 +166,21 @@ void WavePhysicsModel::createUIPanel()
 		setFrequency(value);
 	});
 
+	createInfoPanel({10, 330, 300, 330}, "About this view", {
+		"A source on the left shakes the medium and the disturbance travels to the "
+		"right. This asks the classic aether question: what kind of medium could "
+		"carry light?",
+		"Light is a transverse wave. A transverse (shear) wave only travels far in a "
+		"medium that springs back when it is sheared, like a solid; in a fluid it "
+		"fades. Compare how far the wave reaches in each medium (F5-F9).",
+	});
+	updateInfoText();
+
 }
 
 void WavePhysicsModel::destroyUIPanel()
 {
+	destroyInfoPanel();
 	if (uiPanel) {
 		auto& guiContext = app_.gui();
 		guiContext.destroyPanel(uiPanel);
@@ -241,6 +253,44 @@ bool WavePhysicsModel::handleKeyPress(int key)
 	updateUIValues();
 	printStatus();
 	return true;
+}
+
+void WavePhysicsModel::updateInfoText()
+{
+	const char* waveText = (waveType == WaveType::TRANSVERSE)
+		? "Transverse wave (T to switch): the medium moves up and down, across the "
+		  "direction the wave travels."
+		: "Longitudinal wave (T to switch): the medium moves back and forth along the "
+		  "direction of travel, making compressions like sound.";
+
+	const char* mediumText = "";
+	switch (mediumMode) {
+		case MediumMode::SOLID:
+			mediumText = "Solid: an elastic lattice of balls joined by springs. It resists "
+				"shear as well as compression, so both kinds of wave travel across it. "
+				"Colour shows how far each ball is displaced. The right-hand edge absorbs "
+				"waves so they don't reflect back.";
+			break;
+		case MediumMode::VISCOUS:
+			mediumText = "Viscous fluid: particles that drag on their neighbours. The more "
+				"viscous it is, the further a shear wave reaches before fading (Viscosity "
+				"slider or +/-, which only affect this medium). Colour shows particle velocity.";
+			break;
+		case MediumMode::LIQUID:
+			mediumText = "Liquid: particles that slide freely past each other, so a shear "
+				"wave fades within part of the screen. Colour shows particle velocity.";
+			break;
+		case MediumMode::GAS:
+			mediumText = "Gas: sparse particles in constant random motion. The wave fades "
+				"quickly and the jitter blurs it. Colour shows particle velocity.";
+			break;
+		case MediumMode::SUPERSOLID:
+			mediumText = "Supersolid: the same lattice as the solid with almost no internal "
+				"friction, so waves cross it with very little loss.";
+			break;
+	}
+
+	setInfoDetail(std::string(mediumText) + " " + waveText);
 }
 
 void WavePhysicsModel::printModeMenu() const

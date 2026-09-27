@@ -51,6 +51,19 @@ void AetherDensityVisualizer::initialize()
 	launchNewRay();
 	createRaySegments();
 
+	createInfoPanel({10, 10, 340, 360}, "About this view", {
+		"The yellow sphere is a central mass. The aether around it is denser near "
+		"the mass and thins out with distance, back to a uniform background density.",
+		"Light travels more slowly through denser aether, so the aether acts like a "
+		"lens whose refractive index rises towards the centre. The light ray (the "
+		"short coloured trail) bends towards the mass as it crosses, the way starlight "
+		"bends near the Sun in general relativity. A new ray starts when it leaves.",
+		"The aether also circulates around the vertical axis, turning fastest next to "
+		"the axis (twice as fast as at the edge), so the inner layers keep pulling "
+		"ahead of the outer ones.",
+		"Based on Chantal Roth's general-relativity density model.",
+	});
+
 	// Show whichever display mode is the default (fog)
 	applyDisplayMode();
 
@@ -71,6 +84,7 @@ void AetherDensityVisualizer::cleanup()
 	// Graphics objects are cleared by PhysicsApp when switching models, but the
 	// fog volume is a separate resource that clearObjects() doesn't touch
 	destroyFogVolume();
+	destroyInfoPanel();
 }
 
 void AetherDensityVisualizer::setDisplayMode(DisplayMode mode)
@@ -85,6 +99,14 @@ void AetherDensityVisualizer::applyDisplayMode()
 {
 	const bool fog = (displayMode == DisplayMode::FOG);
 	setParticlesVisible(!fog);
+	setInfoDetail(fog
+		? "Fog view (V for particles): the fog's thickness shows how much denser than "
+		  "the background the aether is. Its colour shows how fast it turns: orange "
+		  "next to the axis (fastest), then cyan, then blue (slowest)."
+		: "Particle view (V for fog): each cube is a piece of aether circling the "
+		  "axis. Its colour shows how fast it turns: orange next to the axis (fastest), "
+		  "then cyan, then blue at the outer corners (slowest). Watch the lattice twist "
+		  "as the inner layers pull ahead.");
 	if (fogVolume.isValid()) {
 		if (fog) {
 			app_.drawVolume(fogVolume, {lightGraphics::RenderLayer::Volume, 0.0f});
