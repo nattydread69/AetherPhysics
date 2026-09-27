@@ -21,6 +21,7 @@
 #include "PhysicsModel.h"
 #include <vector>
 #include <memory>
+#include <optional>
 #include <glm/glm.hpp>
 
 #include "lightVulkanGraphics/ui/Panel.h"
@@ -74,6 +75,7 @@ public:
 
 private:
 	MediumMode mediumMode = MediumMode::SOLID;
+	std::optional<MediumMode> pendingMediumMode; // Set by the UI dropdown, applied in update()
 	WaveType waveType = WaveType::TRANSVERSE;
 	float viscosity = 0.8f;
 	float frequency = 0.12f;
@@ -116,6 +118,7 @@ private:
 		float minDist;
 		float repelK;
 		std::vector<int> objectIndices;
+		std::vector<std::vector<size_t>> grid; // Collision grid cells, reused between steps
 	};
 
 	std::unique_ptr<SolidLattice> solid;

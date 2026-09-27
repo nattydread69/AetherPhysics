@@ -19,9 +19,13 @@
 #pragma once
 
 #include "AetherPhysicsModel.h"
-#include <vector>
-#include <glm/glm.hpp>
 
+#include <deque>
+#include <memory>
+#include <random>
+#include <vector>
+
+#include <glm/glm.hpp>
 
 /**
 This is based on Chantal Roth's general relativity
@@ -42,79 +46,64 @@ public:
 
 	// Public methods for ray control
 	void setRayLength(int segments);
-	int maxRaySegments = 50;           // Maximum number of visible ray segments
+	int maxRaySegments = 50;           // Number of visible ray segments
 
-protected:
-	// Density visualization parameters
-	float maxRadius = 20.0f;           // Maximum radius for sphere distribution
-	float densityFalloff = 0.1f;       // Controls how quickly density decreases with distance
-	int totalSpheres = 1000;           // Total number of spheres to create
-	float c0 = 1.0;
-    float rho0 = 1.0;
-    float delta_rho = 0.8;
-    float alpha = 0.2;
-    float beta = 1.0;
-    float Nx = 25;                    // Higher resolution lattice (25^3 = 15625 particles)
-    float halfRange = 3;
+	static constexpr int MIN_RAY_SEGMENTS = 1;
+	static constexpr int MAX_RAY_SEGMENTS = 200;
 
+private:
+	// Density field parameters: rho = rho0 + delta_rho * exp(-alpha * r^2)
+	float c0 = 1.0f;
+	float rho0 = 1.0f;
+	float delta_rho = 0.8f;
+	float alpha = 0.2f;
+	float beta = 1.0f;                 // Refractive index n = 1 + beta * (rho - rho0)
+	int Nx = 25;                       // Lattice resolution (Nx^3 particles), set from the GPU tier
+	float halfRange = 3.0f;            // Lattice spans [-halfRange, halfRange] on each axis
 
-	// Orbital motion parameters
-	float baseRotationSpeed = 0.003f;    // Base rotation speed multiplier (slower)
-	float speedVariation = 1.0f;       // How much speed varies from center to edge (gentler)
-	glm::vec3 centerPoint = glm::vec3(0.0f); // Center point for orbital motion
+	// Orbital motion about the Y axis
+	float baseAngularSpeed = 0.1f;     // Angular speed at the lattice edge (rad/s)
+	float speedVariation = 1.0f;       // Extra speed at the centre (1 = twice as fast)
 
-	// Sphere data for orbital motion
-	std::vector<float> orbitalRadii;   // Distance from center for each sphere
-	std::vector<float> orbitalAngles;  // Current angle for each sphere
-	std::vector<float> orbitalSpeeds;  // Orbital speed for each sphere
-	std::vector<glm::vec3> orbitalAxes; // Rotation axis for each sphere (random)
+	// Per-particle orbit, in the XZ plane at the particle's own height
+	std::vector<float> orbitalRadii;   // Horizontal distance from the Y axis
+	std::vector<float> orbitalAngles;  // Current angle about the Y axis
+	std::vector<float> orbitalSpeeds;  // Angular speed (rad/s)
 
-	// Central sphere
-	int centralSphereIndex = -1;       // Index of the central yellow sphere
-
-	// Light ray parameters
+	// Light ray traced through the density field
 	struct LightRay3D {
-		glm::vec3 pos;           // Current position
-		glm::vec3 k;             // Direction vector (normalized)
-		std::vector<glm::vec3> path;  // Path history
+		glm::vec3 pos;                 // Current position
+		glm::vec3 k;                   // Direction vector (normalized)
+		std::deque<glm::vec3> path;    // Most recent positions, oldest first
 
 		LightRay3D(glm::vec3 position, glm::vec3 direction)
 			: pos(position), k(glm::normalize(direction)) {
 			path.push_back(pos);
 		}
-
-		void step(float dtLocal, float c0, float rho0, float delta_rho, float alpha, float beta, AetherDensityVisualizer* parent);
-		const std::vector<glm::vec3>& getPath() const { return path; }
 	};
 
-	// Light ray data
-	LightRay3D* currentRay = nullptr;
+	std::unique_ptr<LightRay3D> currentRay;
 	std::vector<int> rayObjectIndices; // Graphics object indices for the ray trail
-	float dt = 0.02f;                  // Time step for ray integration
-	int maxPathLength = 1000;          // Maximum path points to store
-	int stepsPerFrame = 5;             // Ray steps per frame
+	float rayStepSize = 0.02f;         // Integration step for the ray
+	float rayStepsPerSecond = 300.0f;  // Ray integration rate, independent of frame rate
+	int maxRayStepsPerFrame = 50;      // Cap so a long frame can't stall the app
+	float rayStepAccumulator = 0.0f;   // Fractional steps carried to the next frame
 
-private:
-	virtual void createLattice();
-	virtual void updateMotion(float time);
-	virtual void increaseRotationSpeed();
-	virtual void decreaseRotationSpeed();
-	float refractiveIndex(glm::vec3 const &pos);
-	float gradientRefractiveIndex(glm::vec3 const &pos);
-	glm::vec3 gradientRefractiveIndexVector(glm::vec3 const &pos);
+	std::mt19937 rng{std::random_device{}()};
 
-	float calculateDensity(glm::vec3 const &pos);
-	float densityField(glm::vec3 const &pos, float rho0, float delta_rho, float alpha);
-	glm::vec3 generateRandomPosition();
-	glm::vec3 generateRandomAxis();
-	float calculateOrbitalSpeed(float distance);
+	void createLattice();
+	void updateMotion(float deltaTime);
+	float calculateOrbitalSpeed(float horizontalRadius) const;
+
+	float densityField(glm::vec3 const &pos) const;
+	float refractiveIndex(glm::vec3 const &pos) const;
+	glm::vec3 refractiveIndexGradient(glm::vec3 const &pos, float dr) const;
 
 	// Light ray methods
-	void createLightRay();
+	void createRaySegments();
 	void launchNewRay();
+	void stepRay(LightRay3D& ray);
 	void updateLightRay(float deltaTime);
 	void updateRayGraphics();
-	glm::vec3 viridisColor(float t);
-	glm::vec3 gradientRefractiveIndexVector(glm::vec3 const &pos, float dr, float rho0, float delta_rho, float alpha);
-
+	glm::vec3 rayColor(float t) const;
 };
