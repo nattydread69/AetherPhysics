@@ -204,6 +204,10 @@ void PhysicsApp::handleKeyboardInput()
 			{
 				densityViz->setRayLength(densityViz->maxRaySegments - 10);
 			}
+			if (keysJustPressed[GLFW_KEY_V])
+			{
+				densityViz->toggleDisplayMode();
+			}
 		}
 	}
 
@@ -234,6 +238,8 @@ void PhysicsApp::showModelMenu() const
 {
 	std::cout << "\nAether Physics\n"
 		<< "F1: Aether Density Visualizer\n"
+		<< "  V: Toggle particles / volumetric fog\n"
+		<< "  +/-: Longer / shorter light ray\n"
 		<< "F2: Wave Physics (Solid/Fluid)\n"
 		<< "F3: Show this menu\n"
 		<< "Alt+W: Wave Physics Controls (when in Wave Physics)\n"

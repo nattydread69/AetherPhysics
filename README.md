@@ -13,8 +13,12 @@ A 3D lattice of aether particles whose density varies with position. Rays
 through the lattice show how the density field bends paths. The model is based on
 [Chantal Roth's general-relativity density model](https://jsfiddle.net/Chenopdodium/n879e5dh/49/).
 
-The lattice size depends on the detected GPU (see
-[GPU scaling](#gpu-scaling)).
+The density can be shown two ways (toggle with `V`):
+
+- **Particles** (default): the orbiting lattice of blue particles. The lattice
+  size depends on the detected GPU (see [GPU scaling](#gpu-scaling)).
+- **Fog**: volumetric fog whose thickness follows the density above the
+  background level, so it is densest at the centre and fades out with distance.
 
 ### Wave Physics (`F2`)
 
@@ -47,6 +51,7 @@ the keyboard (see below).
 
 | Key            | Action                                  |
 |----------------|-----------------------------------------|
+| `V`            | Toggle particles / volumetric fog       |
 | `+` / `=`      | Lengthen density rays by 10 segments    |
 | `-`            | Shorten density rays by 10 segments     |
 
@@ -54,7 +59,7 @@ the keyboard (see below).
 
 | Key            | Action                                            |
 |----------------|---------------------------------------------------|
-| `1` – `5`      | Medium: solid, viscous, liquid, gas, supersolid   |
+| `F5` – `F9`    | Medium: solid, viscous, liquid, gas, supersolid   |
 | `T`            | Toggle transverse / longitudinal wave             |
 | `+` / `=`      | Increase viscosity by 0.1 (range 0–1)             |
 | `-`            | Decrease viscosity by 0.1                         |
@@ -63,7 +68,9 @@ the keyboard (see below).
 | `M`            | Print the wave controls menu                      |
 | `Alt` + `W`    | Print the wave controls menu and current status   |
 
-Keypad digits and `+`/`-` work too.
+Keypad `1`–`5` also pick the medium, and keypad `+`/`-` work too. The top-row
+digits `1`–`4` belong to Light Vulkan Graphics, which uses them to switch its
+render mode (normal, wireframe, unlit, spheres).
 
 ## GPU scaling
 

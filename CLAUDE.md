@@ -30,13 +30,14 @@ This applies to:
 - `PhysicsApp` - Owns the window, polls the keyboard each frame and switches models
 - `PhysicsModel` - Abstract base class for all physics simulations (`initialize`/`update`/`cleanup`)
 - `AetherPhysicsModel` - Base for aether-based models
-- `AetherDensityVisualizer` - 3D lattice of blue aether particles with density rays (default model, `F1`)
+- `AetherDensityVisualizer` - Aether density field with a light ray (default model, `F1`). Two display modes toggled with `V`: the orbiting particle lattice, or volumetric fog of the density excess using the library's volume renderer (`createTexture3D`/`createVolume`). The fog volume is not a scene object, so `cleanup()` must destroy it; `clearObjects()` does not.
 - `WavePhysicsModel` - Wave physics (solid/viscous/liquid/gas/supersolid) with an on-screen control panel (`F2`)
 - `GPUCapabilities` - VRAM detection and lattice resolution selection
 
 ## Keyboard Input
 - All key handling starts in `PhysicsApp::handleKeyboardInput()`. It updates `keysPressed`/`keysJustPressed`/`keysJustReleased` for every key at the start of each frame. Use the `keysJustPressed` edge flags for one-shot actions.
 - Global keys: `F1`/`F2` switch models, `F3` prints the menu, `Esc` quits.
+- Light Vulkan Graphics reads some keys itself on every frame: `W`/`A`/`S`/`D`/`Q`/`E` (camera), top-row `1`-`4` (render mode), `N`/`P`/`O` and the arrow keys (rigged animation), `Left Shift` (camera speed). Don't bind app shortcuts to these.
 - Model-specific keys only apply while that model is active. `WavePhysicsModel::handleKeyPress()` owns the wave bindings. Keep it, `WavePhysicsModel::printModeMenu()` and the Controls section of `README.md` in sync.
 
 ## Build and Test
