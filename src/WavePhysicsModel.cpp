@@ -43,12 +43,18 @@ WavePhysicsModel::WavePhysicsModel(lightGraphics::lightVulkanGraphics& app)
 WavePhysicsModel::~WavePhysicsModel()
 {
 	cleanup();
+	app_.setClearColor(previousClearColor);
 }
 
 void WavePhysicsModel::initialize()
 {
 	std::cout << "Initializing Wave Physics Model..." << std::endl;
-	buildSolid();
+
+	// The original's canvas background (#1e293b)
+	previousClearColor = app_.getClearColor();
+	app_.setClearColor(glm::vec4(30.0f / 255.0f, 41.0f / 255.0f, 59.0f / 255.0f, 1.0f));
+
+	buildScene();
 	std::cout << "Wave Physics Model ready. Lattice: " << solid->Nx << "x" << solid->Ny
 			  << " (" << solid->nodes.size() << " nodes, " << solid->springs.size()
 			  << " springs)" << std::endl;
@@ -59,6 +65,9 @@ void WavePhysicsModel::cleanup()
 	destroyUIPanel();
 	solid.reset();
 	fluid.reset();
+	sourceLineIndex = -1;
+	probeSegments.clear();
+	envelopeSegments.clear();
 
 	// Remove all physics objects from the graphics system
 	app_.clearObjects();
@@ -70,13 +79,16 @@ void WavePhysicsModel::setMediumMode(MediumMode mode)
 	cleanup();
 	mediumMode = mode;
 
-	if (mode == MediumMode::SOLID || mode == MediumMode::SUPERSOLID) {
-		buildSolid();
-	} else {
-		buildFluid();
-	}
+	// Viscosity presets per medium, as in the original's setMode (it only
+	// affects the Viscous medium's parameters)
+	if (mode == MediumMode::VISCOUS) viscosity = 0.8f;
+	else if (mode == MediumMode::LIQUID) viscosity = 0.2f;
+	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID) viscosity = 0.0f;
+
+	buildScene();
 
 	time = 0.0f;
+	frameAccumulator = 0.0f;
 	createUIPanel();
 }
 
@@ -166,13 +178,16 @@ void WavePhysicsModel::createUIPanel()
 		setFrequency(value);
 	});
 
-	createInfoPanel({10, 330, 300, 330}, "About this view", {
-		"A source on the left shakes the medium and the disturbance travels to the "
-		"right. This asks the classic aether question: what kind of medium could "
-		"carry light?",
-		"Light is a transverse wave. A transverse (shear) wave only travels far in a "
-		"medium that springs back when it is sheared, like a solid; in a fluid it "
-		"fades. Compare how far the wave reaches in each medium (F5-F9).",
+	createInfoPanel({10, 330, 300, 380}, "About this view", {
+		"A plate on the left shakes the medium and the disturbance travels to the "
+		"right. Light is a transverse wave, so this asks the classic aether question: "
+		"what kind of medium could carry it? A transverse (shear) wave only travels in "
+		"a medium that springs back when sheared, like a solid.",
+		"The line across the middle is the average displacement (solids) or velocity "
+		"(fluids) at each distance from the plate. Colour shows which way each part is "
+		"moving. In the solids the wave emerges from the springs; in the fluids a "
+		"prescribed wave field moves the particles.",
+		"Based on Chantal Roth's Wave Physics Lab.",
 	});
 	updateInfoText();
 
@@ -257,40 +272,44 @@ bool WavePhysicsModel::handleKeyPress(int key)
 
 void WavePhysicsModel::updateInfoText()
 {
-	const char* waveText = (waveType == WaveType::TRANSVERSE)
-		? "Transverse wave (T to switch): the medium moves up and down, across the "
-		  "direction the wave travels."
-		: "Longitudinal wave (T to switch): the medium moves back and forth along the "
-		  "direction of travel, making compressions like sound.";
+	const bool transverse = (waveType == WaveType::TRANSVERSE);
+	std::string text = transverse
+		? "Transverse wave (T to switch): the medium moves across the direction of travel. "
+		: "Longitudinal wave (T to switch): the medium moves along the direction of travel, "
+		  "making compressions like sound. ";
 
-	const char* mediumText = "";
 	switch (mediumMode) {
 		case MediumMode::SOLID:
-			mediumText = "Solid: an elastic lattice of balls joined by springs. It resists "
-				"shear as well as compression, so both kinds of wave travel across it. "
-				"Colour shows how far each ball is displaced. The right-hand edge absorbs "
-				"waves so they don't reflect back.";
-			break;
-		case MediumMode::VISCOUS:
-			mediumText = "Viscous fluid: particles that drag on their neighbours. The more "
-				"viscous it is, the further a shear wave reaches before fading (Viscosity "
-				"slider or +/-, which only affect this medium). Colour shows particle velocity.";
-			break;
-		case MediumMode::LIQUID:
-			mediumText = "Liquid: particles that slide freely past each other, so a shear "
-				"wave fades within part of the screen. Colour shows particle velocity.";
-			break;
-		case MediumMode::GAS:
-			mediumText = "Gas: sparse particles in constant random motion. The wave fades "
-				"quickly and the jitter blurs it. Colour shows particle velocity.";
+			text += transverse
+				? "Solid: supported. Shear travels as an elastic wave through the spring lattice."
+				: "Solid: supported. Compression travels as an elastic wave through the spring lattice.";
+			text += " The right-hand edge absorbs the wave so it doesn't reflect.";
 			break;
 		case MediumMode::SUPERSOLID:
-			mediumText = "Supersolid: the same lattice as the solid with almost no internal "
-				"friction, so waves cross it with very little loss.";
+			text += "Supersolid: near-lossless. The same lattice with almost no damping, so "
+				"waves persist much longer.";
+			break;
+		case MediumMode::VISCOUS:
+			text += transverse
+				? "Viscous fluid: strongly attenuated. The shear motion decays exponentially "
+				  "with distance; the faint curve near the bottom shows how fast. More "
+				  "viscosity (slider or +/-) lets it reach further."
+				: "Viscous fluid: supported. A sound-like wave travels, damped by viscosity.";
+			break;
+		case MediumMode::LIQUID:
+			text += transverse
+				? "Liquid: not supported. With no shear rigidity the motion stays near the "
+				  "plate and dies fast."
+				: "Liquid: supported. Pressure (sound) waves travel through it.";
+			break;
+		case MediumMode::GAS:
+			text += transverse
+				? "Gas: not supported. No shear rigidity; mostly random thermal motion."
+				: "Gas: supported. Sound travels through compressions and rarefactions.";
 			break;
 	}
 
-	setInfoDetail(std::string(mediumText) + " " + waveText);
+	setInfoDetail(text);
 }
 
 void WavePhysicsModel::printModeMenu() const
@@ -336,137 +355,159 @@ void WavePhysicsModel::printStatus() const
 		<< "└────────────────────────┘\n";
 }
 
+// ---------------------------------------------------------------------------
+// Port of Chantal Roth's Wave Physics Lab. Physics runs in her units (canvas
+// pixels, y down; time in animation frames) with her constants; only draw()
+// converts to world units.
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Minimal signed delta in a periodic domain (her wrapDelta). The extra
+// "+ period" keeps negative deltas right, which std::fmod alone does not.
+float wrapDelta(float d, float period)
+{
+	return std::fmod(std::fmod(d + period * 0.5f, period) + period, period) - period * 0.5f;
+}
+
+float wrapPosition(float y, float period)
+{
+	return std::fmod(std::fmod(y, period) + period, period);
+}
+
+// s in [-1, 1] -> blue .. red (her divergingColor)
+glm::vec4 divergingColor(float s, float alpha)
+{
+	const float t = (glm::clamp(s, -1.0f, 1.0f) + 1.0f) * 0.5f;
+	return glm::vec4(glm::mix(60.0f, 240.0f, t) / 255.0f,
+					 glm::mix(120.0f, 80.0f, t) / 255.0f,
+					 glm::mix(240.0f, 60.0f, t) / 255.0f,
+					 alpha);
+}
+
+glm::vec4 rgba(float r, float g, float b, float a)
+{
+	return glm::vec4(r / 255.0f, g / 255.0f, b / 255.0f, a);
+}
+
+}
+
+void WavePhysicsModel::buildScene()
+{
+	if (mediumMode == MediumMode::SOLID || mediumMode == MediumMode::SUPERSOLID) {
+		buildSolid();
+	} else {
+		buildFluid();
+	}
+	buildOverlays();
+}
+
 void WavePhysicsModel::buildSolid()
 {
 	solid = std::make_unique<SolidLattice>();
-	const float gap = 0.4f;
-	const float startX = SOURCE_X / 450.0f * SCENE_WIDTH - SCENE_WIDTH * 0.5f;
-	const float endX = SCENE_WIDTH * 0.5f - 0.5f;
-	const int Nx = static_cast<int>((endX - startX) / gap) + 1;
-	const int Ny = static_cast<int>(SCENE_HEIGHT / gap);
+	SolidLattice& s = *solid;
 
-	solid->gap = gap;
-	solid->Nx = Nx;
-	solid->Ny = Ny;
-	solid->spongeStart = SCENE_WIDTH * 0.41f - SCENE_WIDTH * 0.5f;
-	solid->nodes.reserve(Nx * Ny);
-	solid->objectIndices.reserve(Nx * Ny);
+	s.gap = 18.0f;
+	const float startX = SOURCE_X;
+	const float endX = CANVAS_W - 25.0f;
+	s.Nx = static_cast<int>(std::floor((endX - startX) / s.gap)) + 1;
+	s.Ny = static_cast<int>(std::floor(CANVAS_H / s.gap));
+	// The original wraps at the canvas height (500) although the rows repeat
+	// every Ny * gap (486), which leaves the top-to-bottom springs stretched by
+	// 14 px at rest. Wrapping at the rows' own period removes that.
+	s.periodY = s.Ny * s.gap;
+	s.spongeStart = CANVAS_W * 0.82f;
 
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_real_distribution<float> colorVar(-0.1f, 0.1f);
+	auto idx = [&s](int i, int j) { return i * s.Ny + j; };
 
-	for (int i = 0; i < Nx; ++i) {
-		for (int j = 0; j < Ny; ++j) {
-			const float x = startX + i * gap;
-			const float y = (j + 0.5f) * gap - SCENE_HEIGHT * 0.5f;
-
-			Node node;
-			node.i = i;
-			node.j = j;
-			node.pos = glm::vec3(x, y, 0.0f);
-			node.basePos = node.pos;
-			node.vel = glm::vec3(0.0f);
-			node.driven = (i == 0);
-
-			solid->nodes.push_back(node);
-
-			if (node.driven) {
-				app_.addObject(
-					lightGraphics::ShapeType::SPHERE,
-					node.pos,
-					glm::vec3(0.08f),
-					glm::vec4(1.0f, 0.65f, 0.0f, 1.0f),
-					glm::quat(1, 0, 0, 0),
-					"Driven Node " + std::to_string(i) + ":" + std::to_string(j),
-					0.1f
-				);
-			} else {
-				glm::vec4 color(0.3f, 0.6f, 0.95f, 0.8f);
-				color.x += colorVar(gen);
-				color.y += colorVar(gen);
-				color.z += colorVar(gen);
-
-				app_.addObject(
-					lightGraphics::ShapeType::SPHERE,
-					node.pos,
-					glm::vec3(0.06f),
-					glm::vec4(glm::clamp(glm::vec3(color), 0.0f, 1.0f), 0.8f),
-					glm::quat(1, 0, 0, 0),
-					"Node " + std::to_string(i) + ":" + std::to_string(j),
-					0.1f
-				);
-			}
-			solid->objectIndices.push_back(app_.getObjectCount() - 1);
+	s.nodes.reserve(s.Nx * s.Ny);
+	for (int i = 0; i < s.Nx; ++i) {
+		for (int j = 0; j < s.Ny; ++j) {
+			const glm::vec2 pos(startX + i * s.gap, (j + 0.5f) * s.gap);
+			s.nodes.push_back({pos, glm::vec2(0.0f), pos, i == 0});
 		}
 	}
 
-	auto nodeIdx = [Ny](int i, int j) { return i * Ny + j; };
-	const float diag = gap * glm::sqrt(2.0f);
-
-	for (int i = 0; i < Nx; ++i) {
-		for (int j = 0; j < Ny; ++j) {
-			const int a = nodeIdx(i, j);
-
-			if (i + 1 < Nx) {
-				solid->springs.push_back({a, nodeIdx(i + 1, j), gap});
+	const float diag = s.gap * glm::root_two<float>();
+	for (int i = 0; i < s.Nx; ++i) {
+		for (int j = 0; j < s.Ny; ++j) {
+			const int a = idx(i, j);
+			if (i + 1 < s.Nx) {
+				s.springs.push_back({a, idx(i + 1, j), s.gap});                          // right (not periodic in x)
 			}
-			solid->springs.push_back({a, nodeIdx(i, (j + 1) % Ny), gap});
-
-			if (i + 1 < Nx) {
-				solid->springs.push_back({a, nodeIdx(i + 1, (j + 1) % Ny), diag});
-				solid->springs.push_back({a, nodeIdx(i + 1, (j - 1 + Ny) % Ny), diag});
+			s.springs.push_back({a, idx(i, (j + 1) % s.Ny), s.gap});                     // vertical (periodic in y)
+			if (i + 1 < s.Nx) {
+				s.springs.push_back({a, idx(i + 1, (j + 1) % s.Ny), diag});              // diagonals, to reduce
+				s.springs.push_back({a, idx(i + 1, (j - 1 + s.Ny) % s.Ny), diag});       // "fabric" anisotropy
 			}
 		}
 	}
 
+	// Faint links first so the nodes draw over them
+	for (int k = 0; k < static_cast<int>(s.springs.size()); ++k) {
+		if (s.springs[k].rest <= s.gap * 1.01f) {
+			s.linkSprings.push_back(k);
+			s.linkIndices.push_back(addSegment());
+		}
+	}
+
+	s.objectIndices.reserve(s.nodes.size());
+	for (const Node& n : s.nodes) {
+		const float diameter = (n.driven ? 7.0f : 6.0f) * PX;
+		app_.addObject(lightGraphics::ShapeType::SPHERE, toWorld(n.pos), glm::vec3(diameter),
+					   divergingColor(0.0f, 0.75f), glm::quat(1, 0, 0, 0), "Node", 0.1f);
+		s.objectIndices.push_back(static_cast<int>(app_.getObjectCount()) - 1);
+	}
 }
 
 void WavePhysicsModel::buildFluid()
 {
 	fluid = std::make_unique<FluidSystem>();
+	FluidSystem& f = *fluid;
 
-	int count = 1000;
-	if (mediumMode == MediumMode::VISCOUS) count = 1200;
-	if (mediumMode == MediumMode::GAS) count = 600;
+	int count = 2200;
+	if (mediumMode == MediumMode::VISCOUS) count = 2400;
+	if (mediumMode == MediumMode::GAS) count = 1400;
 
-	const float minX = SOURCE_X / 450.0f * SCENE_WIDTH - SCENE_WIDTH * 0.5f + 0.5f;
-	const float maxX = SCENE_WIDTH * 0.5f - 0.5f;
-	fluid->particles.reserve(count);
-	fluid->objectIndices.reserve(count);
-	fluid->minDist = (mediumMode == MediumMode::GAS) ? 0.12f : 0.14f;
-	fluid->repelK = (mediumMode == MediumMode::GAS) ? 0.55f : 0.70f;
-
-	std::random_device rd;
-	std::mt19937 gen(rd());
-	std::uniform_real_distribution<float> posDist(-SCENE_WIDTH * 0.5f, SCENE_WIDTH * 0.5f);
-	std::uniform_real_distribution<float> velDist(-0.3f, 0.3f);
-
+	const float minX = SOURCE_X + 25.0f;
+	f.particles.reserve(count);
 	for (int i = 0; i < count; ++i) {
-		Particle p;
-		p.pos = glm::vec3(
-			minX + (maxX - minX) * (i % 100) / 100.0f,
-			posDist(gen),
-			0.0f
-		);
-		p.vel = glm::vec3(velDist(gen), velDist(gen), 0.0f);
+		const glm::vec2 pos(minX + random01(rng) * (CANVAS_W - minX), random01(rng) * CANVAS_H);
+		const glm::vec2 vel((random01(rng) - 0.5f) * 0.3f, (random01(rng) - 0.5f) * 0.3f);
+		f.particles.push_back({pos, vel});
+	}
+	// Short-range repulsion keeps tracers from clumping
+	f.minDist = (mediumMode == MediumMode::GAS) ? 6.0f : 7.0f;
+	f.repelK = (mediumMode == MediumMode::GAS) ? 0.55f : 0.70f;
 
-		fluid->particles.push_back(p);
+	const float diameter = 2.0f * ((mediumMode == MediumMode::GAS) ? 3.2f : 2.8f) * PX;
+	f.objectIndices.reserve(count);
+	for (const Particle& part : f.particles) {
+		app_.addObject(lightGraphics::ShapeType::SPHERE, toWorld(part.pos), glm::vec3(diameter),
+					   divergingColor(0.0f, 0.7f), glm::quat(1, 0, 0, 0), "Tracer", 0.04f);
+		f.objectIndices.push_back(static_cast<int>(app_.getObjectCount()) - 1);
+	}
+}
 
-		glm::vec4 color(0.3f, 0.6f, 0.95f, 0.7f);
-		app_.addObject(
-			lightGraphics::ShapeType::CUBE,
-			p.pos,
-			glm::vec3(0.04f),
-			color,
-			glm::quat(1, 0, 0, 0),
-			"Particle " + std::to_string(i),
-			0.04f
-		);
-		fluid->objectIndices.push_back(app_.getObjectCount() - 1);
+void WavePhysicsModel::buildOverlays()
+{
+	sourceLineIndex = addSegment();
+
+	probeSegments.clear();
+	const int bins = solid ? 140 : 160;
+	for (int i = 0; i + 1 < bins; ++i) {
+		probeSegments.push_back(addSegment());
 	}
 
+	envelopeSegments.clear();
+	if (fluid) {
+		for (float x = SOURCE_X + 4.0f; x < CANVAS_W; x += 4.0f) {
+			envelopeSegments.push_back(addSegment());
+		}
+	}
 }
+
+// ---- Stepping ----------------------------------------------------------------
 
 void WavePhysicsModel::update(float deltaTime)
 {
@@ -477,138 +518,112 @@ void WavePhysicsModel::update(float deltaTime)
 		printStatus();
 	}
 
-	time += deltaTime;
-	const float dt = deltaTime / SUB_STEPS;
-
-	for (int s = 0; s < SUB_STEPS; ++s) {
-		stepPhysics(dt);
+	// The original advances one animation frame per display frame. Run whole
+	// frames at 60 per second, capped so a slow machine runs slower rather
+	// than taking huge, unstable steps.
+	frameAccumulator += deltaTime * FRAMES_PER_SECOND;
+	int frames = static_cast<int>(frameAccumulator);
+	frameAccumulator -= frames;
+	if (frames > MAX_FRAMES_PER_UPDATE) {
+		frames = MAX_FRAMES_PER_UPDATE;
+		frameAccumulator = 0.0f;
+	}
+	for (int f = 0; f < frames; ++f) {
+		stepFrame();
 	}
 
-	try {
-		if (solid && !solid->objectIndices.empty() && solid->objectIndices.size() == solid->nodes.size()) {
-			for (size_t i = 0; i < solid->nodes.size(); ++i) {
-				app_.setObjectPosition(solid->objectIndices[i], solid->nodes[i].pos);
+	draw();
+}
 
-				float disp = (waveType == WaveType::TRANSVERSE)
-					? (solid->nodes[i].pos.y - solid->nodes[i].basePos.y)
-					: (solid->nodes[i].pos.x - solid->nodes[i].basePos.x);
-				disp = glm::clamp(disp / (AMP * 1.2f / 450.0f * SCENE_WIDTH), -1.0f, 1.0f);
-
-				float r = 0.3f + 0.35f * disp;
-				float g = 0.6f;
-				float b = 0.95f - 0.35f * disp;
-
-				app_.setObjectColor(solid->objectIndices[i],
-					glm::vec4(glm::clamp(glm::vec3(r, g, b), 0.0f, 1.0f), 0.8f));
-			}
-		}
-
-		if (fluid && !fluid->objectIndices.empty() && fluid->objectIndices.size() == fluid->particles.size()) {
-			for (size_t i = 0; i < fluid->particles.size(); ++i) {
-				app_.setObjectPosition(fluid->objectIndices[i], fluid->particles[i].pos);
-
-				float vcomp = (waveType == WaveType::TRANSVERSE)
-					? fluid->particles[i].vel.y
-					: fluid->particles[i].vel.x;
-				float omega = frequency;
-				float vScale = std::max(0.001f, AMP * omega / 450.0f * SCENE_WIDTH);
-				float s = glm::clamp(vcomp / (vScale * 1.4f), -1.0f, 1.0f);
-
-				float t = (s + 1.0f) * 0.5f;
-				float r = glm::mix(60.0f, 240.0f, t) / 255.0f;
-				float g = glm::mix(120.0f, 80.0f, t) / 255.0f;
-				float b = glm::mix(240.0f, 60.0f, t) / 255.0f;
-
-				app_.setObjectColor(fluid->objectIndices[i], glm::vec4(r, g, b, 0.7f));
-			}
-		}
-	} catch (const std::exception& e) {
-		std::cerr << "Exception in update: " << e.what() << std::endl;
-	} catch (...) {
-		std::cerr << "Unknown exception in update" << std::endl;
+void WavePhysicsModel::stepFrame()
+{
+	const float dt = 1.0f / SUB_STEPS;
+	for (int s = 0; s < SUB_STEPS; ++s) {
+		stepPhysics(dt);
 	}
 }
 
 void WavePhysicsModel::stepPhysics(float dt)
 {
+	time += dt;
+
+	const float omega = frequency;
+	const float disp = AMP * std::sin(time * omega);
+	const float vel = AMP * omega * std::cos(time * omega);
+
 	if (solid) {
-		stepSolid(dt);
-	} else if (fluid) {
-		stepFluid(dt);
+		stepSolid(dt, disp, vel);
+	}
+	if (fluid) {
+		stepFluid(dt, omega);
 	}
 }
 
-void WavePhysicsModel::stepSolid(float dt)
+void WavePhysicsModel::stepSolid(float dt, float disp, float vel)
 {
-	const float omega = frequency;
-	const float disp = AMP * std::sin(time * omega) / 450.0f * SCENE_WIDTH;
-	const float vel = AMP * omega * std::cos(time * omega) / 450.0f * SCENE_WIDTH;
+	SolidLattice& s = *solid;
+	const bool super = (mediumMode == MediumMode::SUPERSOLID);
 
-	const float kSpring = (mediumMode == MediumMode::SUPERSOLID) ? 0.09f : 0.085f;
-	const float kDamp = (mediumMode == MediumMode::SUPERSOLID) ? 0.0f : 0.030f;
+	// Spring constants tuned for a stable, clean plane wave
+	const float kSpring = super ? 0.09f : 0.085f;
+	const float kDamp = super ? 0.0f : 0.030f;
 
-	for (auto& node : solid->nodes) {
-		if (!node.driven) continue;
-
+	// 1) Drive the left column as a plane source
+	for (Node& n : s.nodes) {
+		if (!n.driven) continue;
 		if (waveType == WaveType::TRANSVERSE) {
-			node.pos.x = node.basePos.x;
-			node.pos.y = node.basePos.y + disp;
-			node.vel.x = 0.0f;
-			node.vel.y = vel;
+			n.pos = glm::vec2(n.base.x, wrapPosition(n.base.y + disp, s.periodY));
+			n.vel = glm::vec2(0.0f, vel);
 		} else {
-			node.pos.x = node.basePos.x + disp;
-			node.pos.y = node.basePos.y;
-			node.vel.x = vel;
-			node.vel.y = 0.0f;
+			n.pos = glm::vec2(n.base.x + disp, n.base.y);
+			n.vel = glm::vec2(vel, 0.0f);
 		}
 	}
 
-	for (const auto& spring : solid->springs) {
-		auto& a = solid->nodes[spring.nodeA];
-		auto& b = solid->nodes[spring.nodeB];
+	// 2) Spring forces, with periodic y
+	for (const Spring& spring : s.springs) {
+		Node& a = s.nodes[spring.a];
+		Node& b = s.nodes[spring.b];
 
-		glm::vec3 delta = b.pos - a.pos;
-		float dist = glm::length(delta);
+		const glm::vec2 d(b.pos.x - a.pos.x, wrapDelta(b.pos.y - a.pos.y, s.periodY));
+		const float distSq = glm::dot(d, d);
+		if (distSq < 1e-6f) continue;
 
-		if (dist < 1e-6f) continue;
+		const float dist = std::sqrt(distSq);
+		const glm::vec2 n = d / dist;
+		const float vrel = glm::dot(b.vel - a.vel, n);
+		const glm::vec2 force = (kSpring * (dist - spring.rest) + kDamp * vrel) * n;
 
-		float ext = dist - spring.restLength;
-		glm::vec3 n = delta / dist;
-		float dvrel = glm::dot(b.vel - a.vel, n);
-		float f = kSpring * ext + kDamp * dvrel;
-		glm::vec3 force = f * n;
-
-		if (!a.driven) {
-			a.vel += force * dt;
-		}
-		if (!b.driven) {
-			b.vel -= force * dt;
-		}
+		// Driven nodes are a prescribed source
+		if (!a.driven) a.vel += force * dt;
+		if (!b.driven) b.vel -= force * dt;
 	}
 
-	const float spongeStart = solid->spongeStart;
-	for (auto& node : solid->nodes) {
-		if (node.driven) continue;
+	// 3) Integrate, damp, and absorb in the sponge layer so the wave doesn't
+	//    reflect off the right edge
+	const float linDamp = super ? 0.9997f : 0.9965f;
+	for (Node& n : s.nodes) {
+		if (n.driven) continue;
 
-		const float linDamp = (mediumMode == MediumMode::SUPERSOLID) ? 0.9997f : 0.9965f;
-		node.vel *= linDamp;
-
-		if (node.pos.x > spongeStart) {
-			float t = glm::clamp((node.pos.x - spongeStart) / (SCENE_WIDTH * 0.5f - spongeStart), 0.0f, 1.0f);
-			float sponge = (mediumMode == MediumMode::SUPERSOLID) ? (1.0f - 0.06f * t * t) : (1.0f - 0.18f * t * t);
-			node.vel *= sponge;
+		n.vel *= linDamp;
+		if (n.pos.x > s.spongeStart) {
+			const float t = glm::clamp((n.pos.x - s.spongeStart) / (CANVAS_W - s.spongeStart), 0.0f, 1.0f);
+			n.vel *= super ? (1.0f - 0.06f * t * t) : (1.0f - 0.18f * t * t);
 		}
 
-		node.pos += node.vel * dt;
-
-		if (node.pos.y < -SCENE_HEIGHT * 0.5f) node.pos.y += SCENE_HEIGHT;
-		if (node.pos.y >= SCENE_HEIGHT * 0.5f) node.pos.y -= SCENE_HEIGHT;
+		n.pos += n.vel * dt;
+		n.pos.y = wrapPosition(n.pos.y, s.periodY);
 	}
 }
 
 WavePhysicsModel::FluidParams WavePhysicsModel::getFluidParams() const
 {
-	FluidParams p;
+	// Chantal's demo parameters (lengths in pixels):
+	// - deltaShear: how far transverse motion penetrates
+	// - coupling: how strongly tracers follow the imposed field
+	// - jitter: random motion, making the medium look more gas-like
+	// - drag: damps random motion so viscous looks sluggish
+	FluidParams p{25.0f, 0.6f, 0.12f, 0.02f, 7.0f, 600.0f};
 
 	if (mediumMode == MediumMode::VISCOUS) {
 		p.deltaShear = glm::mix(35.0f, 140.0f, viscosity);
@@ -618,148 +633,251 @@ WavePhysicsModel::FluidParams WavePhysicsModel::getFluidParams() const
 		p.soundSpeed = 6.5f;
 		p.soundAtten = glm::mix(520.0f, 240.0f, viscosity);
 	} else if (mediumMode == MediumMode::LIQUID) {
-		p.deltaShear = 18.0f;
-		p.coupling = 0.55f;
-		p.jitter = 0.10f;
-		p.drag = 0.02f;
-		p.soundSpeed = 7.5f;
-		p.soundAtten = 700.0f;
+		p = {18.0f, 0.55f, 0.10f, 0.02f, 7.5f, 700.0f};  // Almost no transverse penetration; sound propagates
 	} else if (mediumMode == MediumMode::GAS) {
-		p.deltaShear = 10.0f;
-		p.coupling = 0.35f;
-		p.jitter = 0.55f;
-		p.drag = 0.01f;
-		p.soundSpeed = 5.5f;
-		p.soundAtten = 520.0f;
-	} else {
-		p.deltaShear = 25.0f;
-		p.coupling = 0.6f;
-		p.jitter = 0.12f;
-		p.drag = 0.02f;
-		p.soundSpeed = 7.0f;
-		p.soundAtten = 600.0f;
+		p = {10.0f, 0.35f, 0.55f, 0.01f, 5.5f, 520.0f};  // Transverse dies immediately; lots of thermal motion
 	}
 
 	return p;
 }
 
-void WavePhysicsModel::stepFluid(float dt)
+void WavePhysicsModel::stepFluid(float dt, float omega)
 {
-	static std::mt19937 gen(std::random_device{}());
-	static std::uniform_real_distribution<float> jitterDist(-0.5f, 0.5f);
-
-	const float omega = frequency;
-	const float sourceX = SOURCE_X / 450.0f * SCENE_WIDTH - SCENE_WIDTH * 0.5f;
-
+	FluidSystem& f = *fluid;
 	const FluidParams params = getFluidParams();
+	const float disp = AMP * std::sin(time * omega);
+
+	// The driving plane moves in x for longitudinal waves
+	const float driveX = (waveType == WaveType::LONGITUDINAL) ? (SOURCE_X + disp) : SOURCE_X;
+
+	// 1) Impose an analytic velocity field, as the original does:
+	//    transverse: oscillatory shear layer  vy ~ exp(-x/delta) cos(wt - x/delta)
+	//    longitudinal: travelling sound wave  vx ~ exp(-x/L) cos(wt - kx)
 	const float kShear = 1.0f / std::max(8.0f, params.deltaShear);
 	const float kSound = omega / std::max(2.0f, params.soundSpeed);
+	const float damp = std::exp(-params.drag * dt);
 
-	for (auto& p : fluid->particles) {
-		float xDist = std::max(0.0f, p.pos.x - sourceX);
-		float vxField = 0.0f, vyField = 0.0f;
-
+	for (Particle& p : f.particles) {
+		const float xDist = std::max(0.0f, p.pos.x - driveX);
+		glm::vec2 field(0.0f);
 		if (waveType == WaveType::TRANSVERSE) {
-			float env = std::exp(-kShear * xDist);
-			float phase = (omega * time) - (kShear * xDist);
-			vyField = (AMP * omega) * std::cos(phase) * env / 450.0f * SCENE_WIDTH;
+			const float env = std::exp(-kShear * xDist);
+			field.y = (AMP * omega) * std::cos(omega * time - kShear * xDist) * env;
 		} else {
-			float env = std::exp(-xDist / std::max(0.8f, params.soundAtten / 100.0f));
-			float phase = (omega * time) - (kSound * xDist);
-			vxField = (AMP * omega) * std::cos(phase) * env / 450.0f * SCENE_WIDTH;
+			const float env = std::exp(-xDist / std::max(80.0f, params.soundAtten));
+			field.x = (AMP * omega) * std::cos(omega * time - kSound * xDist) * env;
 		}
 
-		p.vel.x += (vxField - p.vel.x) * params.coupling * dt;
-		p.vel.y += (vyField - p.vel.y) * params.coupling * dt;
-
-		float j = params.jitter * dt;
-		p.vel.x += jitterDist(gen) * j;
-		p.vel.y += jitterDist(gen) * j;
-
-		float damp = std::exp(-params.drag * dt);
-		p.vel *= damp;
+		p.vel += (field - p.vel) * params.coupling * dt;               // Relax towards the field
+		const float j = params.jitter * dt;                             // Jitter: gas noisy, viscous quiet
+		p.vel += glm::vec2(random01(rng) - 0.5f, random01(rng) - 0.5f) * j;
+		p.vel *= damp;                                                  // Drag
 	}
 
-	const float minD = fluid->minDist;
-	const float minDSq = minD * minD;
-	const float repelK = fluid->repelK;
-	const float SCENE_H = SCENE_HEIGHT;
-
-	// Spatial partitioning: divide into grid cells
-	const float cellSize = minD * 2.0f;
-	const int gridWidth = (int)std::ceil(SCENE_WIDTH / cellSize) + 1;
-	const int gridHeight = (int)std::ceil(SCENE_HEIGHT / cellSize) + 1;
-	// Reuse the grid between steps; clear() keeps each cell's capacity
-	auto& grid = fluid->grid;
-	grid.resize(gridWidth * gridHeight);
-	for (auto& cell : grid) {
+	// 2) Short-range repulsion. Like the original, every pair is visited from
+	//    both sides, so each pushes twice. Unlike it, neighbour rows wrap in y,
+	//    matching the periodic distance.
+	constexpr float CELL = 14.0f;
+	const int cols = static_cast<int>(std::ceil(CANVAS_W / CELL));
+	const int rows = static_cast<int>(std::ceil(CANVAS_H / CELL));
+	f.grid.resize(static_cast<size_t>(cols) * rows);
+	for (auto& cell : f.grid) {
 		cell.clear();
 	}
-
-	// Populate grid
-	for (size_t i = 0; i < fluid->particles.size(); ++i) {
-		const auto& p = fluid->particles[i];
-		int gx = (int)std::floor((p.pos.x + SCENE_WIDTH * 0.5f) / cellSize);
-		int gy = (int)std::floor((p.pos.y + SCENE_HEIGHT * 0.5f) / cellSize);
-		gx = std::max(0, std::min(gx, gridWidth - 1));
-		gy = std::max(0, std::min(gy, gridHeight - 1));
-		grid[gy * gridWidth + gx].push_back(i);
+	auto cellOf = [&](const glm::vec2& pos) {
+		return glm::ivec2(glm::clamp(static_cast<int>(std::floor(pos.x / CELL)), 0, cols - 1),
+						  glm::clamp(static_cast<int>(std::floor(pos.y / CELL)), 0, rows - 1));
+	};
+	for (int k = 0; k < static_cast<int>(f.particles.size()); ++k) {
+		const glm::ivec2 c = cellOf(f.particles[k].pos);
+		f.grid[c.y * cols + c.x].push_back(k);
 	}
 
-	// Check collisions only between nearby particles
-	for (size_t i = 0; i < fluid->particles.size(); ++i) {
-		auto& pi = fluid->particles[i];
-		int gx = (int)std::floor((pi.pos.x + SCENE_WIDTH * 0.5f) / cellSize);
-		int gy = (int)std::floor((pi.pos.y + SCENE_HEIGHT * 0.5f) / cellSize);
-		gx = std::max(0, std::min(gx, gridWidth - 1));
-		gy = std::max(0, std::min(gy, gridHeight - 1));
-
-		// Check this cell and 8 neighbors
+	const float minDSq = f.minDist * f.minDist;
+	for (int k = 0; k < static_cast<int>(f.particles.size()); ++k) {
+		Particle& p = f.particles[k];
+		const glm::ivec2 c = cellOf(p.pos);
 		for (int dy = -1; dy <= 1; ++dy) {
+			const int ny = (c.y + dy + rows) % rows;
 			for (int dx = -1; dx <= 1; ++dx) {
-				int nx = gx + dx;
-				int ny = gy + dy;
-				if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < gridHeight) {
-					for (size_t j : grid[ny * gridWidth + nx]) {
-						if (i >= j) continue; // Only check each pair once
-						auto& pj = fluid->particles[j];
-
-						glm::vec3 delta = pj.pos - pi.pos;
-						delta.y = std::fmod(delta.y + SCENE_H * 0.5f, SCENE_H) - SCENE_H * 0.5f;
-
-						float d2 = glm::dot(delta, delta);
-						if (d2 > 0.0001f && d2 < minDSq) {
-							float d = std::sqrt(d2);
-							float push = (1.0f - d / minD);
-							glm::vec3 f = (delta / d) * push * repelK * dt;
-							pi.vel -= f;
-							pj.vel += f;
-						}
+				const int nx = c.x + dx;
+				if (nx < 0 || nx >= cols) continue;
+				for (int q : f.grid[ny * cols + nx]) {
+					if (q == k) continue;
+					Particle& other = f.particles[q];
+					const glm::vec2 d(other.pos.x - p.pos.x, wrapDelta(other.pos.y - p.pos.y, CANVAS_H));
+					const float d2 = glm::dot(d, d);
+					if (d2 > 0.0001f && d2 < minDSq) {
+						const float dist = std::sqrt(d2);
+						const glm::vec2 push = (d / dist) * (1.0f - dist / f.minDist) * f.repelK * dt;
+						p.vel -= push;
+						other.vel += push;
 					}
 				}
 			}
 		}
 	}
 
-	const float right = SCENE_WIDTH * 0.5f + 0.4f;
-	const float left = sourceX - 0.8f;
-	static std::uniform_real_distribution<float> posDist(0.0f, 1.0f);
-
-	for (auto& p : fluid->particles) {
+	// 3) Integrate. Periodic in y; recycled in x so nothing reflects off the edges.
+	const float right = CANVAS_W + 20.0f;
+	const float left = SOURCE_X - 40.0f;
+	for (Particle& p : f.particles) {
 		p.pos += p.vel * dt;
-
-		if (p.pos.y < -SCENE_HEIGHT * 0.5f) p.pos.y += SCENE_HEIGHT;
-		if (p.pos.y >= SCENE_HEIGHT * 0.5f) p.pos.y -= SCENE_HEIGHT;
+		p.pos.y = wrapPosition(p.pos.y, CANVAS_H);
 
 		if (p.pos.x > right) {
-			p.pos.x = sourceX + 0.5f + posDist(gen) * 0.4f;
-			p.pos.y = posDist(gen) * SCENE_HEIGHT - SCENE_HEIGHT * 0.5f;
+			p.pos = glm::vec2(SOURCE_X + 25.0f + random01(rng) * 20.0f, random01(rng) * CANVAS_H);
 			p.vel *= 0.2f;
 		}
 		if (p.pos.x < left) {
-			p.pos.x = SCENE_WIDTH * 0.5f - 0.5f - posDist(gen) * 0.4f;
-			p.pos.y = posDist(gen) * SCENE_HEIGHT - SCENE_HEIGHT * 0.5f;
+			p.pos = glm::vec2(CANVAS_W - 25.0f - random01(rng) * 20.0f, random01(rng) * CANVAS_H);
 			p.vel *= 0.2f;
 		}
+	}
+}
+
+// ---- Drawing -------------------------------------------------------------------
+
+float WavePhysicsModel::viewHeight() const
+{
+	return solid ? solid->periodY : CANVAS_H;
+}
+
+glm::vec3 WavePhysicsModel::toWorld(glm::vec2 canvasPos, float z) const
+{
+	// Centre the canvas on the origin and flip y (canvas y points down)
+	return glm::vec3((canvasPos.x - CANVAS_W * 0.5f) * PX, (viewHeight() * 0.5f - canvasPos.y) * PX, z);
+}
+
+int WavePhysicsModel::addSegment()
+{
+	app_.addObject(lightGraphics::ShapeType::CUBE, glm::vec3(0.0f), glm::vec3(0.0f),
+				   glm::vec4(0.0f), glm::quat(1, 0, 0, 0), "Line", 0.0f);
+	return static_cast<int>(app_.getObjectCount()) - 1;
+}
+
+void WavePhysicsModel::placeSegment(int index, glm::vec2 a, glm::vec2 b, float widthPx, const glm::vec4& color, float z)
+{
+	// A thin box from a to b stands in for a canvas line
+	const glm::vec3 wa = toWorld(a, z);
+	const glm::vec3 wb = toWorld(b, z);
+	const glm::vec3 d = wb - wa;
+	const float length = glm::length(d);
+	const float width = widthPx * PX;
+	const glm::quat rotation = glm::angleAxis(std::atan2(d.y, d.x), glm::vec3(0.0f, 0.0f, 1.0f));
+	app_.updateObjectProperties(index, (wa + wb) * 0.5f, glm::vec3(length + width * 0.5f, width, width), rotation);
+	app_.setObjectColor(index, color);
+}
+
+void WavePhysicsModel::drawProbeLine(const std::vector<glm::vec2>& points, const glm::vec4& color, float widthPx)
+{
+	for (size_t i = 0; i < probeSegments.size(); ++i) {
+		if (i + 1 < points.size()) {
+			placeSegment(probeSegments[i], points[i], points[i + 1], widthPx, color, 0.02f);
+		} else {
+			app_.setObjectColor(probeSegments[i], glm::vec4(0.0f));  // Unused this frame
+		}
+	}
+}
+
+void WavePhysicsModel::draw()
+{
+	const bool super = (mediumMode == MediumMode::SUPERSOLID);
+	const float h = viewHeight();
+
+	// Driving plane
+	const float disp = AMP * std::sin(time * frequency);
+	const float sx = (waveType == WaveType::LONGITUDINAL) ? SOURCE_X + disp : SOURCE_X;
+	placeSegment(sourceLineIndex, glm::vec2(sx, 0.0f), glm::vec2(sx, h), 2.0f,
+				 super ? rgba(168, 85, 247, 0.81f) : rgba(96, 165, 250, 0.81f), 0.01f);
+
+	if (solid) drawSolid();
+	if (fluid) drawFluid();
+}
+
+void WavePhysicsModel::drawSolid()
+{
+	const SolidLattice& s = *solid;
+	const bool super = (mediumMode == MediumMode::SUPERSOLID);
+	const bool transverse = (waveType == WaveType::TRANSVERSE);
+
+	// Faint links (cardinal springs only), drawn along the shortest wrapped path
+	const glm::vec4 linkColor = super ? rgba(168, 85, 247, 0.056f) : rgba(255, 255, 255, 0.048f);
+	for (size_t k = 0; k < s.linkSprings.size(); ++k) {
+		const Spring& spring = s.springs[s.linkSprings[k]];
+		const glm::vec2 a = s.nodes[spring.a].pos;
+		const glm::vec2 b = s.nodes[spring.b].pos;
+		placeSegment(s.linkIndices[k], a, glm::vec2(b.x, a.y + wrapDelta(b.y - a.y, s.periodY)), 1.0f, linkColor, -0.02f);
+	}
+
+	// Nodes coloured by displacement
+	for (size_t k = 0; k < s.nodes.size(); ++k) {
+		const Node& n = s.nodes[k];
+		const float d = transverse ? wrapDelta(n.pos.y - n.base.y, s.periodY) : (n.pos.x - n.base.x);
+		app_.setObjectPosition(s.objectIndices[k], toWorld(n.pos));
+		app_.setObjectColor(s.objectIndices[k], divergingColor(d / (AMP * 1.2f), n.driven ? 0.9f : 0.75f));
+	}
+
+	// Probe line: average displacement at each x, which makes the wave easy to read
+	constexpr int bins = 140;
+	std::vector<float> sum(bins, 0.0f);
+	std::vector<int> count(bins, 0);
+	for (const Node& n : s.nodes) {
+		if (n.driven) continue;
+		const int bx = glm::clamp(static_cast<int>(std::floor(n.pos.x / CANVAS_W * bins)), 0, bins - 1);
+		sum[bx] += transverse ? wrapDelta(n.pos.y - n.base.y, s.periodY) : (n.pos.x - n.base.x);
+		count[bx] += 1;
+	}
+	// The original also plots empty bins as zero. Bins are 6.4 px wide but the
+	// lattice columns are 18 px apart, so that zigzags; join only filled bins.
+	std::vector<glm::vec2> points;
+	for (int i = 0; i < bins; ++i) {
+		if (count[i] == 0) continue;
+		points.emplace_back((i + 0.5f) / bins * CANVAS_W, s.periodY * 0.5f + sum[i] / count[i] * 0.55f);
+	}
+	drawProbeLine(points, super ? rgba(216, 180, 254, 0.56f) : rgba(96, 165, 250, 0.56f), 2.0f);
+}
+
+void WavePhysicsModel::drawFluid()
+{
+	const FluidSystem& f = *fluid;
+	const bool transverse = (waveType == WaveType::TRANSVERSE);
+	const bool gas = (mediumMode == MediumMode::GAS);
+
+	// Tracers coloured by the velocity component along the wave's motion,
+	// normalised by the source's velocity scale
+	const float vScale = std::max(1e-3f, AMP * frequency);
+	for (size_t k = 0; k < f.particles.size(); ++k) {
+		const Particle& p = f.particles[k];
+		const float comp = transverse ? p.vel.y : p.vel.x;
+		app_.setObjectPosition(f.objectIndices[k], toWorld(p.pos));
+		app_.setObjectColor(f.objectIndices[k], divergingColor(comp / (vScale * 1.4f), gas ? 0.55f : 0.70f));
+	}
+
+	// Probe line: average velocity at each x, which shows the attenuation clearly
+	constexpr int bins = 160;
+	std::vector<float> sum(bins, 0.0f);
+	std::vector<int> count(bins, 0);
+	for (const Particle& p : f.particles) {
+		const int bx = glm::clamp(static_cast<int>(std::floor(p.pos.x / CANVAS_W * bins)), 0, bins - 1);
+		sum[bx] += transverse ? p.vel.y : p.vel.x;
+		count[bx] += 1;
+	}
+	std::vector<glm::vec2> points;
+	for (int i = 0; i < bins; ++i) {
+		if (count[i] == 0) continue;  // Join only filled bins, as for the solid
+		points.emplace_back((i + 0.5f) / bins * CANVAS_W, CANVAS_H * 0.5f + sum[i] / count[i] * (55.0f / vScale));
+	}
+	drawProbeLine(points, rgba(226, 232, 240, 0.64f), 2.0f);
+
+	// Shear penetration envelope near the bottom, for transverse waves only
+	const float k = 1.0f / std::max(8.0f, getFluidParams().deltaShear);
+	glm::vec2 prev(SOURCE_X, CANVAS_H * 0.85f - 55.0f);
+	for (size_t i = 0; i < envelopeSegments.size(); ++i) {
+		const float x = SOURCE_X + 4.0f * (i + 1);
+		const glm::vec2 next(x, CANVAS_H * 0.85f - std::exp(-k * (x - SOURCE_X)) * 55.0f);
+		placeSegment(envelopeSegments[i], prev, next, 1.5f,
+					 transverse ? rgba(255, 255, 255, 0.13f) : glm::vec4(0.0f), 0.02f);
+		prev = next;
 	}
 }

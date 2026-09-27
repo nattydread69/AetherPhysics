@@ -26,19 +26,27 @@ The density can be shown two ways (toggle with `V`):
 
 ### Wave Physics (`F2`)
 
-A 2D wave driven from a source through a choice of media:
+A port of Chantal Roth's Wave Physics Lab: a plate on the left drives a 2D
+wave through a choice of media, to show which media can carry a transverse
+(shear) wave like light.
 
-| Medium       | Behaviour                                 |
-|--------------|-------------------------------------------|
-| `SOLID`      | Elastic spring lattice                    |
-| `VISCOUS`    | Lattice with tunable viscosity            |
-| `LIQUID`     | Incompressible particle fluid             |
-| `GAS`        | Low-density particle fluid                |
-| `SUPERSOLID` | Lossless propagation demo                 |
+| Medium       | Transverse (shear)                  | Longitudinal (pressure)       |
+|--------------|-------------------------------------|-------------------------------|
+| `SOLID`      | Travels as an elastic wave          | Travels as an elastic wave    |
+| `VISCOUS`    | Decays with distance; viscosity sets how far it reaches | Travels, damped by viscosity |
+| `LIQUID`     | Not supported: dies near the plate  | Travels (sound)               |
+| `GAS`        | Not supported: mostly thermal motion | Travels (sound)              |
+| `SUPERSOLID` | Travels with very little loss       | Travels with very little loss |
+
+The solids are spring lattices, so their waves emerge from the springs. The
+fluids are tracer particles that follow a prescribed wave field, as in the
+original. A line across the middle shows the average displacement (solids) or
+velocity (fluids) at each distance from the plate; for shear waves in fluids, a
+faint curve near the bottom shows how quickly they die away.
 
 You can switch the wave between **transverse** and **longitudinal**. Set the
 medium, wave type, viscosity and driving frequency from the on-screen panel or
-the keyboard (see below).
+the keyboard (see below). The viscosity setting only affects the Viscous medium.
 
 Each model has an **About this view** panel explaining the physics on screen.
 Its last paragraph follows what you're looking at (fog or particles; the

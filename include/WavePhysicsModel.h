@@ -22,6 +22,7 @@
 #include <vector>
 #include <memory>
 #include <optional>
+#include <random>
 #include <glm/glm.hpp>
 
 #include "lightVulkanGraphics/ui/Panel.h"
@@ -81,28 +82,34 @@ private:
 	float viscosity = 0.8f;
 	float frequency = 0.12f;
 
-	const float SOURCE_X = 70.0f;
-	const float AMP = 30.0f;
-	const int SUB_STEPS = 2;
-	const float SCENE_HEIGHT = 15.0f;
-	const float SCENE_WIDTH = 30.0f;
+	// A port of Chantal Roth's Wave Physics Lab. The simulation runs in her
+	// units, pixels on a 900x500 canvas (y pointing down) and animation frames,
+	// with her constants unchanged. Conversion to world units happens only when
+	// drawing (toWorld), and to seconds only in update().
+	static constexpr float CANVAS_W = 900.0f;
+	static constexpr float CANVAS_H = 500.0f;
+	static constexpr float PX = 30.0f / CANVAS_W;    // World units per pixel
+	static constexpr float FRAMES_PER_SECOND = 60.0f;
+	static constexpr int MAX_FRAMES_PER_UPDATE = 4;  // Slow machines run slower rather than unstable
+	static constexpr int SUB_STEPS = 4;
+	static constexpr float SOURCE_X = 70.0f;         // Driving plane (pixels)
+	static constexpr float AMP = 30.0f;              // Displacement amplitude (pixels)
 
 	struct Node {
-		int i, j;
-		glm::vec3 pos;
-		glm::vec3 vel;
-		glm::vec3 basePos;
+		glm::vec2 pos;
+		glm::vec2 vel;
+		glm::vec2 base;
 		bool driven;
 	};
 
 	struct Spring {
-		int nodeA, nodeB;
-		float restLength;
+		int a, b;
+		float rest;
 	};
 
 	struct Particle {
-		glm::vec3 pos;
-		glm::vec3 vel;
+		glm::vec2 pos;
+		glm::vec2 vel;
 	};
 
 	struct SolidLattice {
@@ -110,8 +117,11 @@ private:
 		std::vector<Spring> springs;
 		float gap;
 		int Nx, Ny;
+		float periodY;                   // Ny * gap: the lattice repeats vertically with this period
 		float spongeStart;
-		std::vector<int> objectIndices;
+		std::vector<int> objectIndices;  // One sphere per node
+		std::vector<int> linkSprings;    // Springs drawn as faint links (the non-diagonal ones)
+		std::vector<int> linkIndices;    // One segment per drawn link
 	};
 
 	struct FluidSystem {
@@ -119,8 +129,20 @@ private:
 		float minDist;
 		float repelK;
 		std::vector<int> objectIndices;
-		std::vector<std::vector<size_t>> grid; // Collision grid cells, reused between steps
+		std::vector<std::vector<int>> grid; // Collision grid cells, reused between steps
 	};
+
+	float frameAccumulator = 0.0f;      // Fractional animation frames carried between updates
+	std::mt19937 rng{std::random_device{}()};
+	std::uniform_real_distribution<float> random01{0.0f, 1.0f};
+	glm::vec4 previousClearColor{0.0f};
+
+	// Overlays, as in the original: the driving plane, a line of the average
+	// displacement (solid) or velocity (fluid) across the scene, and for
+	// transverse waves in fluids the shear penetration envelope
+	int sourceLineIndex = -1;
+	std::vector<int> probeSegments;
+	std::vector<int> envelopeSegments;
 
 	std::unique_ptr<SolidLattice> solid;
 	std::unique_ptr<FluidSystem> fluid;
@@ -134,11 +156,23 @@ private:
 	lightGraphics::ui::Slider* viscositySlider = nullptr;
 	lightGraphics::ui::Slider* frequencySlider = nullptr;
 
+	void buildScene();
 	void buildSolid();
 	void buildFluid();
+	void buildOverlays();
+	void stepFrame();
 	void stepPhysics(float dt);
-	void stepSolid(float dt);
-	void stepFluid(float dt);
+	void stepSolid(float dt, float disp, float vel);
+	void stepFluid(float dt, float omega);
+
+	void draw();
+	void drawSolid();
+	void drawFluid();
+	void drawProbeLine(const std::vector<glm::vec2>& points, const glm::vec4& color, float widthPx);
+	float viewHeight() const;
+	glm::vec3 toWorld(glm::vec2 canvasPos, float z = 0.0f) const;
+	int addSegment();
+	void placeSegment(int index, glm::vec2 a, glm::vec2 b, float widthPx, const glm::vec4& color, float z);
 
 	struct FluidParams {
 		float deltaShear;
