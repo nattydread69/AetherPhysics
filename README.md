@@ -35,11 +35,18 @@ media can carry a transverse (shear) wave like light.
 | `LIQUID`     | Not supported: dies near the plate  | Travels (sound)               |
 | `GAS`        | Not supported: mostly thermal motion | Travels (sound)              |
 | `SUPERSOLID` | Travels with very little loss       | Travels with very little loss |
+| `SUPERFLUID` | Not supported at all: slips past the plate | Travels with no loss   |
 
 The solids are spring lattices, so their waves emerge from the springs. The
-fluids are tracer particles that follow a prescribed wave field. A line across the middle shows the average displacement (solids) or
-velocity (fluids) at each distance from the plate; for shear waves in fluids, a
-faint curve near the bottom shows how quickly they die away.
+fluids are tracer particles that follow a prescribed wave field. A line across
+the middle shows the average displacement (solids) or velocity (fluids) at each
+distance from the plate; for shear waves in fluids, a faint curve near the
+bottom shows how quickly they die away.
+
+The superfluid is the absolute-zero limit: zero viscosity, no thermal motion.
+Like the supersolid it is frictionless, but it cannot carry shear at all, so it
+shows the other half of the aether puzzle: a medium planets could move through
+freely, but one that could not carry light.
 
 You can switch the wave between **transverse** and **longitudinal**. Set the
 medium, wave type, viscosity and driving frequency from the on-screen panel or
@@ -73,7 +80,7 @@ arrow to collapse it.
 
 | Key            | Action                                            |
 |----------------|---------------------------------------------------|
-| `F5` – `F9`    | Medium: solid, viscous, liquid, gas, supersolid   |
+| `F5` – `F10`   | Medium: solid, viscous, liquid, gas, supersolid, superfluid |
 | `T`            | Toggle transverse / longitudinal wave             |
 | `+` / `=`      | Increase viscosity by 0.1 (range 0–1)             |
 | `-`            | Decrease viscosity by 0.1                         |
@@ -82,7 +89,7 @@ arrow to collapse it.
 | `M`            | Print the wave controls menu                      |
 | `Alt` + `W`    | Print the wave controls menu and current status   |
 
-Keypad `1`–`5` also pick the medium, and keypad `+`/`-` work too. The top-row
+Keypad `1`–`6` also pick the medium, and keypad `+`/`-` work too. The top-row
 digits `1`–`4` belong to Light Vulkan Graphics, which uses them to switch its
 render mode (normal, wireframe, unlit, spheres).
 

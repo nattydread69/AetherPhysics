@@ -44,7 +44,8 @@ public:
 		VISCOUS,
 		LIQUID,
 		GAS,
-		SUPERSOLID
+		SUPERSOLID,
+		SUPERFLUID
 	};
 
 	enum class WaveType {
@@ -180,6 +181,9 @@ private:
 		float drag;
 		float soundSpeed;
 		float soundAtten;
+		// Share of the fluid that viscosity can drag sideways: 1 for ordinary
+		// fluids, 0 for a superfluid at absolute zero (it slips past the plate)
+		float normalFraction = 1.0f;
 	};
 
 	FluidParams getFluidParams() const;
