@@ -19,6 +19,7 @@
 #include "WavePhysicsModel.h"
 #include <iostream>
 #include <cmath>
+#include <limits>
 #include <algorithm>
 #include <random>
 #include <glm/glm.hpp>
@@ -83,7 +84,7 @@ void WavePhysicsModel::setMediumMode(MediumMode mode)
 	// parameters)
 	if (mode == MediumMode::VISCOUS) viscosity = 0.8f;
 	else if (mode == MediumMode::LIQUID) viscosity = 0.2f;
-	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID) viscosity = 0.0f;
+	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID || mode == MediumMode::SUPERFLUID) viscosity = 0.0f;
 
 	buildScene();
 
@@ -123,7 +124,7 @@ void WavePhysicsModel::createUIPanel()
 	uiPanel->add<lightGraphics::ui::Label>("Medium Mode");
 	modeDropdown = uiPanel->add<lightGraphics::ui::DropDown>(
 		"",
-		std::vector<std::string>{"Solid", "Viscous", "Liquid", "Gas", "Supersolid"},
+		std::vector<std::string>{"Solid", "Viscous", "Liquid", "Gas", "Supersolid", "Superfluid"},
 		static_cast<int>(mediumMode)
 	);
 	modeDropdown->setOnChange([this](int index) {
@@ -234,7 +235,7 @@ bool WavePhysicsModel::handleKeyPress(int key)
 	constexpr float VISCOSITY_STEP = 0.1f;
 	constexpr float FREQUENCY_STEP = 0.01f;
 
-	// Media use F5-F9 (and keypad 1-5): the library already binds the top-row
+	// Media use F5-F10 (and keypad 1-6): the library already binds the top-row
 	// digits 1-4 to its own render modes (wireframe, unlit, ...)
 	switch (key) {
 		case GLFW_KEY_F5: case GLFW_KEY_KP_1: setMediumMode(MediumMode::SOLID); break;
@@ -242,6 +243,7 @@ bool WavePhysicsModel::handleKeyPress(int key)
 		case GLFW_KEY_F7: case GLFW_KEY_KP_3: setMediumMode(MediumMode::LIQUID); break;
 		case GLFW_KEY_F8: case GLFW_KEY_KP_4: setMediumMode(MediumMode::GAS); break;
 		case GLFW_KEY_F9: case GLFW_KEY_KP_5: setMediumMode(MediumMode::SUPERSOLID); break;
+		case GLFW_KEY_F10: case GLFW_KEY_KP_6: setMediumMode(MediumMode::SUPERFLUID); break;
 		case GLFW_KEY_T:
 			setWaveType(waveType == WaveType::TRANSVERSE ? WaveType::LONGITUDINAL : WaveType::TRANSVERSE);
 			break;
@@ -306,6 +308,15 @@ void WavePhysicsModel::updateInfoText()
 				? "Gas: not supported. No shear rigidity; mostly random thermal motion."
 				: "Gas: supported. Sound travels through compressions and rarefactions.";
 			break;
+		case MediumMode::SUPERFLUID:
+			text += transverse
+				? "Superfluid: not supported at all. With zero viscosity the fluid slips past "
+				  "the plate and nothing is dragged sideways; the curve near the bottom stays flat."
+				: "Superfluid: supported with no loss. Nothing dissipates, so sound crosses "
+				  "the whole scene undamped.";
+			text += " Frictionless like the supersolid, yet unable to carry shear. This is the "
+				"absolute-zero limit; a real superfluid also has a viscous normal part.";
+			break;
 	}
 
 	setInfoDetail(text);
@@ -321,6 +332,7 @@ void WavePhysicsModel::printModeMenu() const
 		<< "║  F7: LIQUID       - Incompressible     ║\n"
 		<< "║  F8: GAS          - Low density fluid  ║\n"
 		<< "║  F9: SUPERSOLID   - Lossless demo      ║\n"
+		<< "║  F10: SUPERFLUID  - Zero viscosity     ║\n"
 		<< "║                                        ║\n"
 		<< "║  T:   Toggle wave type (Trans/Long)    ║\n"
 		<< "║  +/=: Increase viscosity               ║\n"
@@ -342,6 +354,7 @@ void WavePhysicsModel::printStatus() const
 		case MediumMode::LIQUID: modeStr = "LIQUID"; break;
 		case MediumMode::GAS: modeStr = "GAS"; break;
 		case MediumMode::SUPERSOLID: modeStr = "SUPERSOLID"; break;
+		case MediumMode::SUPERFLUID: modeStr = "SUPERFLUID"; break;
 	}
 
 	std::string waveStr = (waveType == WaveType::TRANSVERSE) ? "TRANSVERSE" : "LONGITUDINAL";
@@ -633,6 +646,12 @@ WavePhysicsModel::FluidParams WavePhysicsModel::getFluidParams() const
 		p = {18.0f, 0.55f, 0.10f, 0.02f, 7.5f, 700.0f};  // Almost no transverse penetration; sound propagates
 	} else if (mediumMode == MediumMode::GAS) {
 		p = {10.0f, 0.35f, 0.55f, 0.01f, 5.5f, 520.0f};  // Transverse dies immediately; lots of thermal motion
+	} else if (mediumMode == MediumMode::SUPERFLUID) {
+		// A superfluid at absolute zero: no viscosity, so nothing drags it
+		// sideways (normalFraction 0) and sound is never attenuated; no drag
+		// and no thermal jitter
+		p = {8.0f, 0.6f, 0.0f, 0.0f, 7.5f, std::numeric_limits<float>::infinity()};
+		p.normalFraction = 0.0f;
 	}
 
 	return p;
@@ -648,7 +667,8 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 	const float driveX = (waveType == WaveType::LONGITUDINAL) ? (SOURCE_X + disp) : SOURCE_X;
 
 	// 1) Impose an analytic velocity field:
-	//    transverse: oscillatory shear layer  vy ~ exp(-x/delta) cos(wt - x/delta)
+	//    transverse: oscillatory shear layer  vy ~ exp(-x/delta) cos(wt - x/delta),
+	//                carried only by the fluid's normal (viscous) fraction
 	//    longitudinal: travelling sound wave  vx ~ exp(-x/L) cos(wt - kx)
 	const float kShear = 1.0f / std::max(8.0f, params.deltaShear);
 	const float kSound = omega / std::max(2.0f, params.soundSpeed);
@@ -659,14 +679,14 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 		glm::vec2 field(0.0f);
 		if (waveType == WaveType::TRANSVERSE) {
 			const float env = std::exp(-kShear * xDist);
-			field.y = (AMP * omega) * std::cos(omega * time - kShear * xDist) * env;
+			field.y = params.normalFraction * (AMP * omega) * std::cos(omega * time - kShear * xDist) * env;
 		} else {
 			const float env = std::exp(-xDist / std::max(80.0f, params.soundAtten));
 			field.x = (AMP * omega) * std::cos(omega * time - kSound * xDist) * env;
 		}
 
 		p.vel += (field - p.vel) * params.coupling * dt;               // Relax towards the field
-		const float j = params.jitter * dt;                             // Jitter: gas noisy, viscous quiet
+		const float j = params.jitter * dt;                             // Jitter: gas noisy, viscous quiet, superfluid still
 		p.vel += glm::vec2(random01(rng) - 0.5f, random01(rng) - 0.5f) * j;
 		p.vel *= damp;                                                  // Drag
 	}
@@ -779,14 +799,16 @@ void WavePhysicsModel::drawProbeLine(const std::vector<glm::vec2>& points, const
 
 void WavePhysicsModel::draw()
 {
-	const bool super = (mediumMode == MediumMode::SUPERSOLID);
 	const float h = viewHeight();
 
-	// Driving plane
+	// Driving plane: purple for supersolid, cyan for superfluid, blue otherwise
 	const float disp = AMP * std::sin(time * frequency);
 	const float sx = (waveType == WaveType::LONGITUDINAL) ? SOURCE_X + disp : SOURCE_X;
-	placeSegment(sourceLineIndex, glm::vec2(sx, 0.0f), glm::vec2(sx, h), 2.0f,
-				 super ? rgba(168, 85, 247, 0.81f) : rgba(96, 165, 250, 0.81f), 0.01f);
+	const glm::vec4 planeColor =
+		(mediumMode == MediumMode::SUPERSOLID) ? rgba(168, 85, 247, 0.81f) :
+		(mediumMode == MediumMode::SUPERFLUID) ? rgba(34, 211, 238, 0.81f) :
+		rgba(96, 165, 250, 0.81f);
+	placeSegment(sourceLineIndex, glm::vec2(sx, 0.0f), glm::vec2(sx, h), 2.0f, planeColor, 0.01f);
 
 	if (solid) drawSolid();
 	if (fluid) drawFluid();
@@ -867,12 +889,15 @@ void WavePhysicsModel::drawFluid()
 	}
 	drawProbeLine(points, rgba(226, 232, 240, 0.64f), 2.0f);
 
-	// Shear penetration envelope near the bottom, for transverse waves only
-	const float k = 1.0f / std::max(8.0f, getFluidParams().deltaShear);
-	glm::vec2 prev(SOURCE_X, CANVAS_H * 0.85f - 55.0f);
+	// Shear penetration envelope near the bottom, for transverse waves only.
+	// Flat for a superfluid, which the plate can't drag at all.
+	const FluidParams params = getFluidParams();
+	const float k = 1.0f / std::max(8.0f, params.deltaShear);
+	const float height = 55.0f * params.normalFraction;
+	glm::vec2 prev(SOURCE_X, CANVAS_H * 0.85f - height);
 	for (size_t i = 0; i < envelopeSegments.size(); ++i) {
 		const float x = SOURCE_X + 4.0f * (i + 1);
-		const glm::vec2 next(x, CANVAS_H * 0.85f - std::exp(-k * (x - SOURCE_X)) * 55.0f);
+		const glm::vec2 next(x, CANVAS_H * 0.85f - std::exp(-k * (x - SOURCE_X)) * height);
 		placeSegment(envelopeSegments[i], prev, next, 1.5f,
 					 transverse ? rgba(255, 255, 255, 0.13f) : glm::vec4(0.0f), 0.02f);
 		prev = next;
