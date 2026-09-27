@@ -10,8 +10,7 @@ different media.
 ### Aether Density Visualizer (default, `F1`)
 
 A 3D lattice of aether particles whose density varies with position. Rays
-through the lattice show how the density field bends paths. The model is based on
-[Chantal Roth's general-relativity density model](https://jsfiddle.net/Chenopdodium/n879e5dh/49/).
+through the lattice show how the density field bends paths.
 
 The density can be shown two ways (toggle with `V`):
 
@@ -26,9 +25,8 @@ The density can be shown two ways (toggle with `V`):
 
 ### Wave Physics (`F2`)
 
-A port of Chantal Roth's Wave Physics Lab: a plate on the left drives a 2D
-wave through a choice of media, to show which media can carry a transverse
-(shear) wave like light.
+A plate on the left drives a 2D wave through a choice of media, to show which
+media can carry a transverse (shear) wave like light.
 
 | Medium       | Transverse (shear)                  | Longitudinal (pressure)       |
 |--------------|-------------------------------------|-------------------------------|
@@ -39,8 +37,7 @@ wave through a choice of media, to show which media can carry a transverse
 | `SUPERSOLID` | Travels with very little loss       | Travels with very little loss |
 
 The solids are spring lattices, so their waves emerge from the springs. The
-fluids are tracer particles that follow a prescribed wave field, as in the
-original. A line across the middle shows the average displacement (solids) or
+fluids are tracer particles that follow a prescribed wave field. A line across the middle shows the average displacement (solids) or
 velocity (fluids) at each distance from the plate; for shear waves in fluids, a
 faint curve near the bottom shows how quickly they die away.
 

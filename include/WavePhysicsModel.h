@@ -82,10 +82,9 @@ private:
 	float viscosity = 0.8f;
 	float frequency = 0.12f;
 
-	// A port of Chantal Roth's Wave Physics Lab. The simulation runs in her
-	// units, pixels on a 900x500 canvas (y pointing down) and animation frames,
-	// with her constants unchanged. Conversion to world units happens only when
-	// drawing (toWorld), and to seconds only in update().
+	// The simulation runs in canvas units: pixels on a 900x500 canvas (y
+	// pointing down) and animation frames. Conversion to world units happens
+	// only when drawing (toWorld), and to seconds only in update().
 	static constexpr float CANVAS_W = 900.0f;
 	static constexpr float CANVAS_H = 500.0f;
 	static constexpr float PX = 30.0f / CANVAS_W;    // World units per pixel
@@ -137,7 +136,7 @@ private:
 	std::uniform_real_distribution<float> random01{0.0f, 1.0f};
 	glm::vec4 previousClearColor{0.0f};
 
-	// Overlays, as in the original: the driving plane, a line of the average
+	// Overlays: the driving plane, a line of the average
 	// displacement (solid) or velocity (fluid) across the scene, and for
 	// transverse waves in fluids the shear penetration envelope
 	int sourceLineIndex = -1;

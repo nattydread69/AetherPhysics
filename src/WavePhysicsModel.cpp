@@ -50,7 +50,7 @@ void WavePhysicsModel::initialize()
 {
 	std::cout << "Initializing Wave Physics Model..." << std::endl;
 
-	// The original's canvas background (#1e293b)
+	// Dark slate background (#1e293b)
 	previousClearColor = app_.getClearColor();
 	app_.setClearColor(glm::vec4(30.0f / 255.0f, 41.0f / 255.0f, 59.0f / 255.0f, 1.0f));
 
@@ -79,8 +79,8 @@ void WavePhysicsModel::setMediumMode(MediumMode mode)
 	cleanup();
 	mediumMode = mode;
 
-	// Viscosity presets per medium, as in the original's setMode (it only
-	// affects the Viscous medium's parameters)
+	// Viscosity preset per medium (it only affects the Viscous medium's
+	// parameters)
 	if (mode == MediumMode::VISCOUS) viscosity = 0.8f;
 	else if (mode == MediumMode::LIQUID) viscosity = 0.2f;
 	else if (mode == MediumMode::GAS || mode == MediumMode::SUPERSOLID) viscosity = 0.0f;
@@ -187,7 +187,6 @@ void WavePhysicsModel::createUIPanel()
 		"(fluids) at each distance from the plate. Colour shows which way each part is "
 		"moving. In the solids the wave emerges from the springs; in the fluids a "
 		"prescribed wave field moves the particles.",
-		"Based on Chantal Roth's Wave Physics Lab.",
 	});
 	updateInfoText();
 
@@ -356,14 +355,13 @@ void WavePhysicsModel::printStatus() const
 }
 
 // ---------------------------------------------------------------------------
-// Port of Chantal Roth's Wave Physics Lab. Physics runs in her units (canvas
-// pixels, y down; time in animation frames) with her constants; only draw()
-// converts to world units.
+// Physics runs in canvas units (pixels on a 900x500 canvas, y down; time in
+// animation frames); only draw() converts to world units.
 // ---------------------------------------------------------------------------
 
 namespace {
 
-// Minimal signed delta in a periodic domain (her wrapDelta). The extra
+// Minimal signed delta in a periodic domain. The extra
 // "+ period" keeps negative deltas right, which std::fmod alone does not.
 float wrapDelta(float d, float period)
 {
@@ -375,7 +373,7 @@ float wrapPosition(float y, float period)
 	return std::fmod(std::fmod(y, period) + period, period);
 }
 
-// s in [-1, 1] -> blue .. red (her divergingColor)
+// s in [-1, 1] -> blue .. red
 glm::vec4 divergingColor(float s, float alpha)
 {
 	const float t = (glm::clamp(s, -1.0f, 1.0f) + 1.0f) * 0.5f;
@@ -412,9 +410,8 @@ void WavePhysicsModel::buildSolid()
 	const float endX = CANVAS_W - 25.0f;
 	s.Nx = static_cast<int>(std::floor((endX - startX) / s.gap)) + 1;
 	s.Ny = static_cast<int>(std::floor(CANVAS_H / s.gap));
-	// The original wraps at the canvas height (500) although the rows repeat
-	// every Ny * gap (486), which leaves the top-to-bottom springs stretched by
-	// 14 px at rest. Wrapping at the rows' own period removes that.
+	// Wrap at the rows' own period, Ny * gap (486), not the canvas height
+	// (500); otherwise the top-to-bottom springs sit stretched by 14 px at rest.
 	s.periodY = s.Ny * s.gap;
 	s.spongeStart = CANVAS_W * 0.82f;
 
@@ -518,7 +515,7 @@ void WavePhysicsModel::update(float deltaTime)
 		printStatus();
 	}
 
-	// The original advances one animation frame per display frame. Run whole
+	// The physics is tuned in animation frames. Run whole
 	// frames at 60 per second, capped so a slow machine runs slower rather
 	// than taking huge, unstable steps.
 	frameAccumulator += deltaTime * FRAMES_PER_SECOND;
@@ -618,7 +615,7 @@ void WavePhysicsModel::stepSolid(float dt, float disp, float vel)
 
 WavePhysicsModel::FluidParams WavePhysicsModel::getFluidParams() const
 {
-	// Chantal's demo parameters (lengths in pixels):
+	// Demo parameters (lengths in pixels):
 	// - deltaShear: how far transverse motion penetrates
 	// - coupling: how strongly tracers follow the imposed field
 	// - jitter: random motion, making the medium look more gas-like
@@ -650,7 +647,7 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 	// The driving plane moves in x for longitudinal waves
 	const float driveX = (waveType == WaveType::LONGITUDINAL) ? (SOURCE_X + disp) : SOURCE_X;
 
-	// 1) Impose an analytic velocity field, as the original does:
+	// 1) Impose an analytic velocity field:
 	//    transverse: oscillatory shear layer  vy ~ exp(-x/delta) cos(wt - x/delta)
 	//    longitudinal: travelling sound wave  vx ~ exp(-x/L) cos(wt - kx)
 	const float kShear = 1.0f / std::max(8.0f, params.deltaShear);
@@ -674,8 +671,8 @@ void WavePhysicsModel::stepFluid(float dt, float omega)
 		p.vel *= damp;                                                  // Drag
 	}
 
-	// 2) Short-range repulsion. Like the original, every pair is visited from
-	//    both sides, so each pushes twice. Unlike it, neighbour rows wrap in y,
+	// 2) Short-range repulsion. Every pair is visited from both sides, so each
+	//    pushes twice (repelK is tuned for that). Neighbour rows wrap in y,
 	//    matching the periodic distance.
 	constexpr float CELL = 14.0f;
 	const int cols = static_cast<int>(std::ceil(CANVAS_W / CELL));
@@ -828,8 +825,8 @@ void WavePhysicsModel::drawSolid()
 		sum[bx] += transverse ? wrapDelta(n.pos.y - n.base.y, s.periodY) : (n.pos.x - n.base.x);
 		count[bx] += 1;
 	}
-	// The original also plots empty bins as zero. Bins are 6.4 px wide but the
-	// lattice columns are 18 px apart, so that zigzags; join only filled bins.
+	// Bins are 6.4 px wide but the lattice columns are 18 px apart, so many
+	// are empty; join only filled bins, or the line zigzags through zero.
 	std::vector<glm::vec2> points;
 	for (int i = 0; i < bins; ++i) {
 		if (count[i] == 0) continue;

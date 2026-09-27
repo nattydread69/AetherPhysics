@@ -61,7 +61,6 @@ void AetherDensityVisualizer::initialize()
 		"The aether also circulates around the vertical axis, turning fastest next to "
 		"the axis (twice as fast as at the edge), so the inner layers keep pulling "
 		"ahead of the outer ones.",
-		"Based on Chantal Roth's general-relativity density model.",
 	});
 
 	// Show whichever display mode is the default (fog)
