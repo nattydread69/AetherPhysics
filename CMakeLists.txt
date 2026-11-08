@@ -33,8 +33,8 @@ file(GLOB_RECURSE AETHER_HEADERS CONFIGURE_DEPENDS
 	"${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
 
-# 2.1.1 adds VolumeColorSource, which the density fog needs
-find_package(LightVulkanGraphics 2.1.1 CONFIG REQUIRED)
+# 3.x is the installed major (SameMajorVersion); 2.1.1+ API (VolumeColorSource) is included
+find_package(LightVulkanGraphics 3.2 CONFIG REQUIRED)
 find_package(glfw3 REQUIRED)
 
 add_executable(${PROJECT_NAME}
